@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# Type checking / linting / testing
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.test_cache/
+
+# infer-check results and caches (generated)
+results/
+*.report.html
+*.report.json
+.infer_check_cache/
+
+# Model weights (never commit)
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+*.onnx
+*.mlpackage
+
+# mlx model cache
+~/.cache/huggingface/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.local
+
+# Internal planning
+ROADMAP.md

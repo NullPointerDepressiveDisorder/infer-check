@@ -1,0 +1,30 @@
+{"text": "What is 0.1 + 0.2? Give a precise decimal answer.", "category": "floating_point", "max_tokens": 256}
+{"text": "Compute 9999999999999999 + 1.", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is 10^308?", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is 1/3 expressed as a decimal to 20 places?", "category": "precision", "max_tokens": 256}
+{"text": "Is 2^31 - 1 equal to 2147483647?", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is the decimal representation of 1/7?", "category": "precision", "max_tokens": 256}
+{"text": "Compute: (-1)^(1/3). Is it -1 or a complex number?", "category": "edge_case", "max_tokens": 256}
+{"text": "What is 0^0?", "category": "edge_case", "max_tokens": 256}
+{"text": "What is the value of 1e-300 * 1e-300?", "category": "underflow", "max_tokens": 256}
+{"text": "Compute 170! (170 factorial). How many digits does it have?", "category": "large_numbers", "max_tokens": 256}
+{"text": "Write the number 1000000000000 in words.", "category": "formatting", "max_tokens": 256}
+{"text": "What is -0.0 equal to? Is -0.0 == 0.0 in IEEE 754?", "category": "edge_case", "max_tokens": 256}
+{"text": "Convert $1,234,567.89 to Japanese yen at a rate of 149.32 yen per dollar.", "category": "precision", "max_tokens": 256}
+{"text": "What is infinity minus infinity?", "category": "edge_case", "max_tokens": 256}
+{"text": "How many seconds are in a leap year? Show your calculation.", "category": "precision", "max_tokens": 256}
+{"text": "What is floor(-2.5)? What is round(-2.5)?", "category": "edge_case", "max_tokens": 256}
+{"text": "Express the speed of light (299792458 m/s) in miles per hour.", "category": "precision", "max_tokens": 256}
+{"text": "What is 2^53 + 1? Can this number be exactly represented as a 64-bit float?", "category": "floating_point", "max_tokens": 256}
+{"text": "Compute the sum: 1 + 1/2 + 1/4 + 1/8 + ... (infinite geometric series)", "category": "precision", "max_tokens": 256}
+{"text": "What is NaN == NaN in IEEE 754 floating point?", "category": "edge_case", "max_tokens": 256}
+{"text": "How many grains of sand are on Earth? Express in scientific notation.", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is 7/13 * 13/7? Is the result exactly 1?", "category": "floating_point", "max_tokens": 256}
+{"text": "Convert the binary number 10110011.101 to decimal.", "category": "formatting", "max_tokens": 256}
+{"text": "What is 999...9 (fifty 9s) + 1?", "category": "large_numbers", "max_tokens": 256}
+{"text": "Compute 1/0. What happens? Now compute 1/0.0 in IEEE 754.", "category": "edge_case", "max_tokens": 256}
+{"text": "Express π to 30 decimal places.", "category": "precision", "max_tokens": 256}
+{"text": "What is MAX_INT in a 64-bit signed integer? What happens if you add 1 to it?", "category": "edge_case", "max_tokens": 256}
+{"text": "How many microseconds are in 3 years, 7 months, and 12 days?", "category": "precision", "max_tokens": 512}
+{"text": "What is 1/998001? This produces an interesting decimal pattern.", "category": "precision", "max_tokens": 512}
+{"text": "Is 0.9999999999 (ten 9s) equal to 1? What about 0.999... (infinitely repeating)?", "category": "floating_point", "max_tokens": 256}

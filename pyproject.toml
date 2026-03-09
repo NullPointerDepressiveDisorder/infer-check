@@ -1,0 +1,76 @@
+#:schema https://json.schemastore.org/pyproject.json
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "infer-check"
+version = "0.1.0"
+description = "Correctness and reliability testing for LLM inference engines"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [{ name = "Karan Kunal Mohindroo", email = "karan@karankm.com" }]
+keywords = ["llm", "testing", "correctness", "reliability", "quantization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "click>=8.3.1",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "numpy>=2.4.3",
+    "pydantic>=2.12.5",
+    "rich>=14.3.3",
+    "scipy>=1.17.1",
+    "tqdm>=4.67.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "infer-check[all]",
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.5",
+]
+all = ["infer-check[mlx]", "infer-check[analysis]"]
+mlx = ["mlx>=0.31.0", "mlx-lm<0.31.0"]
+analysis = ["matplotlib>=3.10.8", "scikit-learn>=1.8.0"]
+
+[project.scripts]
+infer-check = "infer_check.cli:main"
+
+[project.urls]
+Repository = "https://github.com/nullpointerdepressivedisorder/infer-check"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/infer_check"]
+
+[dependency-groups]
+dev = [
+    "lxml>=6.0.2",
+    "mypy>=1.19.1",
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.5",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q --tb=short"
