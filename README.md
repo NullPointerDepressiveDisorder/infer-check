@@ -18,13 +18,13 @@ Every LLM inference engine has correctness bugs that benchmarks don't catch:
 
 These aren't model quality problems — they're engine correctness failures. `infer-check` is a CLI tool that runs differential tests across backends, quantization levels, and concurrency conditions to surface them automatically.
 
-## Key findings
+## Example results
 
-Tested across Llama-3.1-8B-Instruct and Qwen3.5-4B (MoE) on Apple Silicon using mlx-lm and vllm-mlx.
+Results from running `infer-check` on Llama-3.1-8B-Instruct and Qwen3.5-4B (MoE) on Apple Silicon using mlx-lm and vllm-mlx. These demonstrate what the tool catches — not a comprehensive benchmark.
 
-### 4-bit quantization degrades task-dependently
+### Quantization sweep
 
-Numerical tasks break worst — 77% severe degradation on adversarial numerics vs. 61% on code:
+4-bit quantization on Llama-3.1-8B showed clear task-dependent degradation. Numerical tasks broke worst:
 
 ```
                        Llama-3.1-8B: bf16 vs 4bit
@@ -37,23 +37,23 @@ Numerical tasks break worst — 77% severe degradation on adversarial numerics v
 └───────────────────────┴───────────┴──────────┴─────────────────┘
 ```
 
-A "severe" divergence means the quantized output is functionally wrong — not just worded differently, but giving incorrect answers to questions the bf16 baseline handles correctly.
+A "severe" divergence means the quantized output is functionally wrong — not just worded differently, but giving incorrect answers to questions the bf16 baseline handles correctly. This pattern is consistent with published research on quantization-induced degradation, reproduced here on MLX's native quantization scheme.
 
-### Dense and MoE architectures degrade at the same rate
+### Dense vs. MoE comparison
 
-Qwen3.5-4B (Gated Delta Networks + sparse MoE, released March 2, 2026) shows 35/50 severe on reasoning at 4-bit — the same rate as dense Llama-3.1-8B. This is the first published quantization data on the Gated DeltaNet architecture.
+Qwen3.5-4B (Gated Delta Networks + sparse MoE) showed similar degradation rates to dense Llama-3.1-8B in our testing — 35/50 severe on reasoning at 4-bit. Small sample, but the tool picks up the signal clearly on both architectures.
 
-### vllm-mlx's serving layer is perfectly faithful
+### Cross-backend diff
 
-mlx-lm vs vllm-mlx at temperature=0 on Llama-3.1-8B-4bit: 50/50 identical (reasoning) and 30/30 identical (numerics). The serving layer introduces zero divergence — any output differences you see in production come from quantization, not from vllm-mlx itself.
+mlx-lm vs vllm-mlx at temperature=0 on Llama-3.1-8B-4bit: 50/50 identical (reasoning) and 30/30 identical (numerics). In this test, the vllm-mlx serving layer introduced zero divergence — output differences in production would come from quantization, not from the serving layer itself.
 
-### Both engines are deterministic at temperature=0
+### Determinism
 
-Llama-3.1-8B-4bit and Qwen3.5-4B both scored 50/50 perfect determinism across 20 runs per prompt on single-request mlx-lm inference.
+Llama-3.1-8B-4bit and Qwen3.5-4B both scored 50/50 identical across 20 runs per prompt on single-request mlx-lm inference at temperature=0.
 
-### vllm-mlx handles concurrent load without corruption
+### Stress test
 
-Stress test at concurrency 1/2/4/8: zero errors, 100% output consistency at all levels. No KV cache corruption, no batch-dependent divergence.
+vllm-mlx at concurrency 1/2/4/8: zero errors, 100% output consistency at all levels. No KV cache corruption or batch-dependent divergence detected.
 
 ## Installation
 
