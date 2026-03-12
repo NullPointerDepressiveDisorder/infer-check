@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "infer-check"
-version = "0.1.1"
+version = "0.1.1.1"
 description = "Correctness and reliability testing for LLM inference engines"
 readme = "README.md"
 license = { text = "Apache-2.0" }
