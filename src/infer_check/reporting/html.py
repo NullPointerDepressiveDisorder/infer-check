@@ -419,7 +419,7 @@ _HTML_TEMPLATE = """\
           </tr>
         </thead>
         <tbody>
-          {% for row in diff_failures %}
+          {% for row in diff_rows %}
           <tr>
             <td style="font-family:monospace;font-size:0.78rem;">{{ row.prompt_id }}</td>
             <td>
