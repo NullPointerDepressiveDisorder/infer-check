@@ -1,14 +1,30 @@
 # infer-check
 
-**Correctness and reliability testing for LLM inference engines.**
+[![PyPI - Version](https://img.shields.io/pypi/v/infer-check?logo=PyPi&color=%233775A9)](https://pypi.org/project/infer-check/)
+[![Run tests and upload coverage](https://github.com/NullPointerDepressiveDisorder/infer-check/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/NullPointerDepressiveDisorder/infer-check/actions/workflows/coverage.yml)
 
-`infer-check` is a CLI tool that tests whether LLM inference backends produce correct, stable, and deterministic output. It catches the bugs that benchmarks miss — quantization-induced failures, cross-backend divergence, KV cache corruption under load, and non-determinism at temperature=0.
+**Catches the correctness bugs that benchmarks miss in LLM inference engines.**
 
-## Key findings
+Quantization silently breaks arithmetic. Serving layers silently alter output. KV caches silently corrupt under load. Benchmarks like lm-evaluation-harness test whether models are smart — `infer-check` tests whether engines are correct.
 
-Tested across Llama-3.1-8B-Instruct and Qwen3.5-4B (MoE) on Apple Silicon using mlx-lm and vllm-mlx.
+## The problem
 
-**4-bit quantization degrades task-dependently.** Numerical tasks break worst:
+Every LLM inference engine has correctness bugs that benchmarks don't catch:
+
+- **KV cache NaN pollution** in vLLM-Ascend permanently corrupts all subsequent requests
+- **FP8 KV quantization** in vLLM causes repeated garbage output
+- **32.5% element mismatches** in SGLang's FP8 DeepGEMM kernels on Blackwell GPUs
+- **Batch-size-dependent output** where tokens change depending on concurrent request count
+
+These aren't model quality problems — they're engine correctness failures. `infer-check` is a CLI tool that runs differential tests across backends, quantization levels, and concurrency conditions to surface them automatically.
+
+## Example results
+
+Results from running `infer-check` on Llama-3.1-8B-Instruct and Qwen3.5-4B (MoE) on Apple Silicon using mlx-lm and vllm-mlx. These demonstrate what the tool catches — not a comprehensive benchmark.
+
+### Quantization sweep
+
+4-bit quantization on Llama-3.1-8B showed clear task-dependent degradation. Numerical tasks broke worst:
 
 ```
                        Llama-3.1-8B: bf16 vs 4bit
@@ -21,17 +37,27 @@ Tested across Llama-3.1-8B-Instruct and Qwen3.5-4B (MoE) on Apple Silicon using 
 └───────────────────────┴───────────┴──────────┴─────────────────┘
 ```
 
-**Dense and MoE architectures degrade similarly at 4-bit.** Qwen3.5-4B (Gated Delta Networks + sparse MoE) shows 35/50 severe on reasoning — the same rate as dense Llama-3.1-8B.
+A "severe" divergence means the quantized output is functionally wrong — not just worded differently, but giving incorrect answers to questions the bf16 baseline handles correctly. This pattern is consistent with published research on quantization-induced degradation, reproduced here on MLX's native quantization scheme.
 
-**vllm-mlx's serving layer is perfectly faithful.** mlx-lm vs vllm-mlx at temperature=0 on Llama-3.1-8B-4bit: 50/50 identical (reasoning) and 30/30 identical (numerics). The serving layer introduces zero divergence.
+### Dense vs. MoE comparison
 
-**Both engines are deterministic at temperature=0.** Llama-3.1-8B-4bit and Qwen3.5-4B both scored 50/50 perfect determinism across 20 runs per prompt.
+Qwen3.5-4B (Gated Delta Networks + sparse MoE) showed similar degradation rates to dense Llama-3.1-8B in our testing — 35/50 severe on reasoning at 4-bit. Small sample, but the tool picks up the signal clearly on both architectures.
 
-**vllm-mlx handles concurrent load without corruption.** Stress test at concurrency 1/2/4/8: zero errors, 100% output consistency at all levels.
+### Cross-backend diff
+
+mlx-lm vs vllm-mlx at temperature=0 on Llama-3.1-8B-4bit: 50/50 identical (reasoning) and 30/30 identical (numerics). In this test, the vllm-mlx serving layer introduced zero divergence — output differences in production would come from quantization, not from the serving layer itself.
+
+### Determinism
+
+Llama-3.1-8B-4bit and Qwen3.5-4B both scored 50/50 identical across 20 runs per prompt on single-request mlx-lm inference at temperature=0.
+
+### Stress test
+
+vllm-mlx at concurrency 1/2/4/8: zero errors, 100% output consistency at all levels. No KV cache corruption or batch-dependent divergence detected.
 
 ## Installation
 
-```bash
+```
 pip install infer-check
 
 # With MLX backend support (Apple Silicon)
@@ -44,7 +70,7 @@ pip install "infer-check[mlx]"
 
 Compare pre-quantized models against a baseline. Each model is a separate HuggingFace repo.
 
-```bash
+```
 infer-check sweep \
   --models "bf16=mlx-community/Meta-Llama-3.1-8B-Instruct-bf16,\
             8bit=mlx-community/Meta-Llama-3.1-8B-Instruct-8bit,\
@@ -73,7 +99,7 @@ The baseline is automatically run twice as a self-check — if it's not 50/50 id
 
 Same model, same quant, different inference paths. Catches serving-layer bugs.
 
-```bash
+```
 # Start vllm-mlx in another terminal:
 # vllm-mlx serve mlx-community/Meta-Llama-3.1-8B-Instruct-4bit --port 8000
 
@@ -91,7 +117,7 @@ Uses `/v1/chat/completions` by default (`--chat`) so server-side chat templates 
 
 Same prompt N times at temperature=0. Output should be bit-identical every run.
 
-```bash
+```
 infer-check determinism \
   --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit \
   --backend mlx-lm \
@@ -104,7 +130,7 @@ infer-check determinism \
 
 Concurrent requests through a serving backend. Tests KV cache correctness under load.
 
-```bash
+```
 infer-check stress \
   --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit \
   --backend openai-compat \
@@ -118,7 +144,7 @@ infer-check stress \
 
 Generate an HTML report from all saved results.
 
-```bash
+```
 infer-check report ./results/ --format html
 ```
 
@@ -127,34 +153,35 @@ infer-check report ./results/ --format html
 Curated prompts targeting known quantization failure modes:
 
 | Suite | Count | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `reasoning.jsonl` | 50 | Multi-step math and logic |
 | `code.jsonl` | 49 | Python, JSON, SQL generation |
 | `adversarial-numerics.jsonl` | 30 | IEEE 754 edge cases, overflow, precision |
 | `long-context.jsonl` | 10 | Tables and transcripts with recall questions |
 | `determinism.jsonl` | 50 | High-entropy continuations for determinism testing |
 
-All suites ship with the package — no need to clone the repo. Custom suites are JSONL files: `{"id": "...", "text": "...", "category": "...", "max_tokens": N}` per line.
+All suites ship with the package — no need to clone the repo. Custom suites are JSONL files with one object per line:
+
+```json
+{"id": "custom-001", "text": "Your prompt here", "category": "math", "max_tokens": 512}
+```
 
 ## Supported backends
 
 | Backend | Type | Use case |
-|---|---|---|
+| --- | --- | --- |
 | **mlx-lm** | In-process | Local Apple Silicon inference with logprobs |
 | **llama.cpp** | HTTP | `llama-server` via `/completion` endpoint |
 | **vllm-mlx** | HTTP | Continuous batching on Apple Silicon |
 | **openai-compat** | HTTP | Any OpenAI-compatible server (vLLM, SGLang, Ollama) |
 
-## Why this exists
+## Roadmap
 
-Every LLM inference engine has correctness bugs that benchmarks don't catch:
-
-- **KV cache NaN pollution** in vLLM-Ascend permanently corrupts all subsequent requests
-- **FP8 KV quantization** in vLLM causes repeated garbage output
-- **32.5% element mismatches** in SGLang's FP8 DeepGEMM kernels on Blackwell GPUs
-- **Batch-size-dependent output** where tokens change depending on concurrent request count
-
-These aren't model quality problems — they're engine correctness failures. Benchmarks like lm-evaluation-harness test whether models are smart. `infer-check` tests whether engines are correct.
+- [ ] GGUF backend (direct llama.cpp integration without HTTP)
+- [ ] CUDA vLLM backend for GPU-based differential testing
+- [ ] Logprobs-based divergence scoring where backends support it
+- [ ] Automated regression CI mode (`infer-check ci` with pass/fail exit codes)
+- [ ] Expanded prompt suites for tool use and multi-turn conversations
 
 ## Requirements
 

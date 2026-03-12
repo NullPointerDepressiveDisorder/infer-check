@@ -57,11 +57,31 @@ def _try_load_stress(data: Any) -> StressResult | None:
     return None
 
 
+def _try_load_stress_list(data: Any) -> list[StressResult] | None:
+    """Attempt to parse *data* as a list of ``StressResult`` objects."""
+    try:
+        if isinstance(data, list) and data:
+            return [StressResult.model_validate(item) for item in data]
+    except Exception:
+        pass
+    return None
+
+
 def _try_load_determinism(data: Any) -> DeterminismResult | None:
     """Attempt to parse *data* as a ``DeterminismResult``."""
     try:
         if isinstance(data, dict):
             return DeterminismResult.model_validate(data)
+    except Exception:
+        pass
+    return None
+
+
+def _try_load_determinism_list(data: Any) -> list[DeterminismResult] | None:
+    """Attempt to parse *data* as a list of ``DeterminismResult`` objects."""
+    try:
+        if isinstance(data, list) and data:
+            return [DeterminismResult.model_validate(item) for item in data]
     except Exception:
         pass
     return None
@@ -93,15 +113,21 @@ def _classify_file(path: Path) -> tuple[str, Any] | None:
     if comp_list is not None:
         return ("diff", comp_list)
 
-    # StressResult (contains 'concurrency_level').
+    # StressResult (single or list).
     stress = _try_load_stress(raw)
     if stress is not None:
-        return ("stress", stress)
+        return ("stress", [stress])
+    stress_list = _try_load_stress_list(raw)
+    if stress_list is not None:
+        return ("stress", stress_list)
 
-    # DeterminismResult.
+    # DeterminismResult (single or list).
     det = _try_load_determinism(raw)
     if det is not None:
-        return ("determinism", det)
+        return ("determinism", [det])
+    det_list = _try_load_determinism_list(raw)
+    if det_list is not None:
+        return ("determinism", det_list)
 
     return None
 
@@ -150,7 +176,10 @@ def export(results_dir: Path, output_path: Path) -> Path:
         if classified is None:
             continue
         section, obj = classified
-        sections[section].append(obj)
+        if isinstance(obj, list) and section in ("stress", "determinism"):
+            sections[section].extend(obj)
+        else:
+            sections[section].append(obj)
 
     # Determine tool version.
     try:

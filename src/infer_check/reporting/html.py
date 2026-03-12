@@ -318,8 +318,9 @@ _HTML_TEMPLATE = """\
   <nav>
     <a href="#summary">Summary</a>
     {% if sweep_rows %}<a href="#sweep">Sweep</a>{% endif %}
-    {% if diff_failures %}<a href="#diff">Diff</a>{% endif %}
+    {% if diff_rows %}<a href="#diff">Diff</a>{% endif %}
     {% if failures %}<a href="#cards">Failures</a>{% endif %}
+    {% if stress_rows %}<a href="#stress">Stress</a>{% endif %}
     {% if determinism_rows %}<a href="#determinism">Determinism</a>{% endif %}
   </nav>
 </header>
@@ -402,14 +403,9 @@ _HTML_TEMPLATE = """\
   {% endif %}
 
   <!-- ── SECTION 3: Cross-Backend Comparison ── -->
-  {% if diff_failures %}
+  {% if diff_rows %}
   <section id="diff">
-    <h2>
-      Cross-Backend Comparison
-      <small style="font-weight:400;font-size:0.8rem;color:var(--text-dim);">
-        (failures only)
-      </small>
-    </h2>
+    <h2>Cross-Backend Comparison</h2>
     <div class="table-wrap">
       <table>
         <thead>
@@ -435,7 +431,7 @@ _HTML_TEMPLATE = """\
               <small style="color:var(--text-dim);">{{ row.test_quant }}</small>
             </td>
             <td>
-              <span class="chip {{ 'chip-fail' if row.similarity | float < 70 else 'chip-ok' }}">
+              <span class="chip {{ 'chip-fail' if row.is_failure else 'chip-ok' }}">
                 {{ row.similarity }}%
               </span>
             </td>
@@ -454,6 +450,47 @@ _HTML_TEMPLATE = """\
                   <pre class="output-pre">{{ row.test_text }}</pre>
                 </div>
               </details>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- ── SECTION: Stress Test Results ── -->
+  {% if stress_rows %}
+  <section id="stress">
+    <h2>Stress Test Results</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Model ID</th>
+            <th>Backend</th>
+            <th>Concurrency</th>
+            <th>Requests</th>
+            <th>Errors</th>
+            <th>Consistency</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in stress_rows %}
+          <tr>
+            <td style="font-family:monospace;font-size:0.78rem;">{{ row.model_id }}</td>
+            <td>{{ row.backend_name }}</td>
+            <td>{{ row.concurrency_level }}</td>
+            <td>{{ row.num_results }}</td>
+            <td>
+              <span class="chip {{ 'chip-fail' if row.error_count > 0 else 'chip-ok' }}">
+                {{ row.error_count }}
+              </span>
+            </td>
+            <td>
+              <span class="chip {{ 'chip-ok' if row.consistency_raw >= 0.9 else 'chip-fail' }}">
+                {{ row.output_consistency }}%
+              </span>
             </td>
           </tr>
           {% endfor %}
@@ -648,9 +685,19 @@ def _load_results(results_dir: Path) -> dict[str, list[Any]]:
             sections["stress"].append(stress)
             continue
 
+        stress_list = _try_load_list(raw, StressResult)
+        if stress_list is not None:
+            sections["stress"].extend(stress_list)
+            continue
+
         det = _try_load(raw, DeterminismResult)
         if det is not None:
             sections["determinism"].append(det)
+            continue
+
+        det_list = _try_load_list(raw, DeterminismResult)
+        if det_list is not None:
+            sections["determinism"].extend(det_list)
 
     return sections
 
@@ -715,13 +762,11 @@ def _build_sweep_context(
 
 
 def _build_diff_context(diff_batches: list[list[ComparisonResult]]) -> list[dict[str, Any]]:
-    """Build failure rows for the cross-backend comparison table."""
-    failures: list[dict[str, Any]] = []
+    """Build rows for the cross-backend comparison table."""
+    rows: list[dict[str, Any]] = []
     for batch in diff_batches:
         for comp in batch:
-            if not comp.is_failure:
-                continue
-            failures.append(
+            rows.append(
                 {
                     "prompt_id": comp.baseline.prompt_id[:32],
                     "baseline_backend": comp.baseline.backend_name,
@@ -729,14 +774,16 @@ def _build_diff_context(diff_batches: list[list[ComparisonResult]]) -> list[dict
                     "test_backend": comp.test.backend_name,
                     "test_quant": comp.test.quantization or "—",
                     "similarity": f"{comp.text_similarity * 100:.1f}",
+                    "similarity_raw": comp.text_similarity,
                     "kl": f"{comp.kl_divergence:.4f}" if comp.kl_divergence is not None else "N/A",
                     "baseline_text": comp.baseline.text,
                     "test_text": comp.test.text,
+                    "is_failure": comp.is_failure,
                 }
             )
     # Sort worst-first (lowest similarity).
-    failures.sort(key=lambda r: float(r["similarity"]))
-    return failures
+    rows.sort(key=lambda r: float(r["similarity_raw"]))
+    return rows
 
 
 def _build_failure_cards(
@@ -784,6 +831,25 @@ def _build_failure_cards(
     # Sort worst-first.
     cards.sort(key=lambda c: float(str(c["similarity"])))
     return cards
+
+
+def _build_stress_context(stress_results: list[StressResult]) -> list[dict[str, Any]]:
+    """Build table rows for the stress section."""
+    rows = []
+    for s in stress_results:
+        rows.append(
+            {
+                "model_id": s.model_id[:32],
+                "backend_name": s.backend_name,
+                "concurrency_level": s.concurrency_level,
+                "error_count": s.error_count,
+                "output_consistency": f"{s.output_consistency * 100:.1f}",
+                "consistency_raw": s.output_consistency,
+                "num_results": len(s.results),
+            }
+        )
+    rows.sort(key=lambda r: (r["backend_name"], r["concurrency_level"]))
+    return rows
 
 
 def _build_determinism_context(
@@ -847,6 +913,7 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
     sections = _load_results(results_dir)
     sweeps: list[SweepResult] = sections["sweep"]
     diff_batches: list[list[ComparisonResult]] = sections["diff"]
+    stress_results: list[StressResult] = sections["stress"]
     det_results: list[DeterminismResult] = sections["determinism"]
 
     # ── Executive Summary ──────────────────────────────────────────────────
@@ -875,8 +942,9 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
 
     # ── Section data ───────────────────────────────────────────────────────
     sweep_ctx = _build_sweep_context(sweeps)
-    diff_failures = _build_diff_context(diff_batches)
+    diff_rows = _build_diff_context(diff_batches)
     failure_cards = _build_failure_cards(diff_batches)
+    stress_rows = _build_stress_context(stress_results)
     determinism_rows = _build_determinism_context(det_results)
 
     generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
@@ -897,8 +965,9 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
         sweep_rows=sweep_ctx["sweep_rows"],
         quant_cols=sweep_ctx["quant_cols"],
         degradation_cliff=sweep_ctx["degradation_cliff"],
-        diff_failures=diff_failures,
+        diff_rows=diff_rows,
         failures=failure_cards,
+        stress_rows=stress_rows,
         determinism_rows=determinism_rows,
         generated_at=generated_at,
     )
