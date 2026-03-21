@@ -12,6 +12,7 @@ __all__ = [
     "SweepResult",
     "StressResult",
     "DeterminismResult",
+    "CompareResult",
 ]
 
 
@@ -103,3 +104,19 @@ class DeterminismResult(BaseInferModel):
     identical_count: int
     divergence_positions: list[int]
     determinism_score: float
+
+
+class CompareResult(BaseInferModel):
+    """Result of comparing two quantizations of the same model."""
+
+    model_a: str  # label or repo ID for model A
+    model_b: str  # label or repo ID for model B
+    backend_a: str
+    backend_b: str
+    comparisons: list[ComparisonResult]
+    flip_rate: float  # fraction of prompts where the "answer" changed
+    mean_kl_divergence: float | None = None
+    mean_text_similarity: float
+    per_category_stats: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=_now)
+    metadata: dict[str, Any] = Field(default_factory=dict)

@@ -9,6 +9,7 @@ from rich.progress import Progress
 
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import (
+    CompareResult,
     ComparisonResult,
     DeterminismResult,
     InferenceResult,
@@ -225,6 +226,152 @@ class TestRunner:
             comparisons=all_comparisons,
             timestamp=datetime.now(UTC),
             summary=summary,
+        )
+
+    async def compare(
+        self,
+        backend_a: BackendAdapter,
+        backend_b: BackendAdapter,
+        prompts: list[Prompt],
+        label_a: str = "model_a",
+        label_b: str = "model_b",
+    ) -> CompareResult:
+        """Compare two quantizations (or model variants) head-to-head.
+
+        Unlike ``sweep`` (one baseline, N test quants on the same backend)
+        and ``diff`` (same model across different backends), ``compare``
+        is designed for arbitrary A-vs-B comparisons — two different quant
+        providers, two different bit widths, or even cross-backend pairs.
+
+        Metrics produced:
+          - Per-prompt text similarity and severity tier (via ``_compare``).
+          - **Flip rate**: fraction of prompts where the functional answer
+            changed, determined by category-aware answer extraction
+            (numeric, boolean, code, JSON, or raw similarity).
+          - **KL divergence** (when both backends expose logprobs).
+          - **Per-category breakdown** (keyed on ``Prompt.category``).
+        """
+        from collections import defaultdict
+
+        results_a: dict[str, InferenceResult] = {}
+        results_b: dict[str, InferenceResult] = {}
+        comparisons: list[ComparisonResult] = []
+
+        with Progress() as progress:
+            total = len(prompts) * 2
+            task = progress.add_task("[cyan]Comparing...", total=total)
+
+            # ── Pass 1: generate from model A ────────────────────────
+            progress.update(task, description=f"[cyan]Generating from {label_a}...")
+            for prompt in prompts:
+                try:
+                    res = await backend_a.generate(prompt)
+                except Exception as exc:
+                    from rich.console import Console
+
+                    Console().print(
+                        f"[yellow]  ⚠ {label_a} failed for '{prompt.text[:60]}...': {exc}[/yellow]"
+                    )
+                    progress.advance(task)
+                    continue
+                if not res.quantization:
+                    res.quantization = label_a
+                results_a[res.prompt_id] = res
+                progress.advance(task)
+
+            # ── Pass 2: generate from model B ────────────────────────
+            progress.update(task, description=f"[cyan]Generating from {label_b}...")
+            for prompt in prompts:
+                try:
+                    res = await backend_b.generate(prompt)
+                except Exception as exc:
+                    from rich.console import Console
+
+                    Console().print(
+                        f"[yellow]  ⚠ {label_b} failed for '{prompt.text[:60]}...': {exc}[/yellow]"
+                    )
+                    progress.advance(task)
+                    continue
+                if not res.quantization:
+                    res.quantization = label_b
+                results_b[res.prompt_id] = res
+                progress.advance(task)
+
+        # ── Build comparisons with answer extraction ────────────────
+        from infer_check.analysis.answer_extract import (
+            answers_match,
+            extract_answer,
+        )
+
+        for prompt in prompts:
+            a = results_a.get(prompt.id)
+            b = results_b.get(prompt.id)
+            if a and b:
+                comp = self._compare(a, b)
+                comp.metadata["category"] = prompt.category
+
+                # Extract functional answers and check for flips.
+                ans_a = extract_answer(a.text, prompt.category)
+                ans_b = extract_answer(b.text, prompt.category)
+                flipped = not answers_match(ans_a, ans_b)
+
+                comp.metadata["flipped"] = flipped
+                comp.metadata["answer_a"] = ans_a.value
+                comp.metadata["answer_b"] = ans_b.value
+                comp.metadata["extraction_strategy"] = ans_a.strategy
+                comp.metadata["extraction_confidence"] = min(
+                    ans_a.confidence,
+                    ans_b.confidence,
+                )
+                comparisons.append(comp)
+
+        # ── Aggregate metrics ────────────────────────────────────────
+        n = len(comparisons) or 1  # avoid ZeroDivisionError
+
+        # Flip rate via answer extraction (not severity proxy).
+        flip_count = sum(1 for c in comparisons if c.metadata.get("flipped", False))
+        flip_rate = flip_count / n
+
+        # KL divergence (only if both sides have logprobs).
+        kl_values = [c.kl_divergence for c in comparisons if c.kl_divergence is not None]
+        mean_kl: float | None = sum(kl_values) / len(kl_values) if kl_values else None
+
+        mean_sim = sum(c.text_similarity for c in comparisons) / n
+
+        # Per-category stats.
+        cat_groups: dict[str, list[ComparisonResult]] = defaultdict(list)
+        for c in comparisons:
+            cat_groups[c.metadata.get("category", "general")].append(c)
+
+        per_category: dict[str, dict[str, float | int]] = {}
+        for cat, cat_comps in cat_groups.items():
+            cat_n = len(cat_comps)
+            cat_flips = sum(1 for c in cat_comps if c.metadata.get("flipped", False))
+            per_category[cat] = {
+                "count": cat_n,
+                "flip_rate": cat_flips / cat_n,
+                "mean_similarity": sum(c.text_similarity for c in cat_comps) / cat_n,
+            }
+
+        # ── Cleanup ──────────────────────────────────────────────────
+        await backend_a.cleanup()
+        await backend_b.cleanup()
+
+        # ── Checkpoint ───────────────────────────────────────────────
+        timestamp_int = int(datetime.now(UTC).timestamp())
+        checkpoint_path = self.cache_dir / f"compare_{label_a}_vs_{label_b}_{timestamp_int}.json"
+        self._save_checkpoint(comparisons, checkpoint_path)
+
+        return CompareResult(
+            model_a=label_a,
+            model_b=label_b,
+            backend_a=backend_a.name,
+            backend_b=backend_b.name,
+            comparisons=comparisons,
+            flip_rate=flip_rate,
+            mean_kl_divergence=mean_kl,
+            mean_text_similarity=mean_sim,
+            per_category_stats=per_category,
         )
 
     async def diff(

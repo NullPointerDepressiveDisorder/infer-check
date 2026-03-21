@@ -38,6 +38,9 @@ class MLXBackend:
         Uses ``mlx_lm.generate_step`` when available so that per-token
         logprobs can be captured.  Falls back to the simpler
         ``mlx_lm.generate`` otherwise.
+
+        The actual computation is synchronous (MLX is single-threaded),
+        but the method is async to satisfy the ``BackendAdapter`` protocol.
         """
         self._ensure_loaded()
 
@@ -57,10 +60,12 @@ class MLXBackend:
                 ) from inner
 
     async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        """Generate inference results for a batch of prompts."""
-        import asyncio
+        """Generate inference results for a batch of prompts.
 
-        return list(await asyncio.gather(*(self.generate(p) for p in prompts)))
+        MLX is single-threaded so we run sequentially rather than
+        using ``asyncio.gather`` which would not yield parallelism.
+        """
+        return [await self.generate(p) for p in prompts]
 
     async def health_check(self) -> bool:
         """Load the model and generate a single token."""

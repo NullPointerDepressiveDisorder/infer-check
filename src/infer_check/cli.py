@@ -209,6 +209,242 @@ def sweep(
 
 
 # ---------------------------------------------------------------------------
+# compare
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("model_a")
+@click.argument("model_b")
+@click.option(
+    "--prompts",
+    default="adversarial-numerics",
+    show_default=True,
+    help="Bundled suite name (e.g. 'reasoning') or path to a .jsonl file.",
+)
+@click.option(
+    "--output",
+    default="./results/compare/",
+    show_default=True,
+    type=click.Path(path_type=Path),
+    help="Output directory.",
+)
+@click.option(
+    "--base-url",
+    default=None,
+    help=(
+        "Base URL override for HTTP backends. Applied to both models unless they resolve to mlx-lm."
+    ),
+)
+@click.option(
+    "--label-a",
+    default=None,
+    help="Custom label for model A (defaults to auto-derived short name).",
+)
+@click.option(
+    "--label-b",
+    default=None,
+    help="Custom label for model B (defaults to auto-derived short name).",
+)
+@click.option(
+    "--report/--no-report",
+    default=True,
+    show_default=True,
+    help="Generate an HTML comparison report after the run.",
+)
+def compare(
+    model_a: str,
+    model_b: str,
+    prompts: str,
+    output: Path,
+    base_url: str | None,
+    label_a: str | None,
+    label_b: str | None,
+    report: bool,
+) -> None:
+    """Compare two quantizations of the same model.
+
+    MODEL_A and MODEL_B are model specs — HuggingFace repos, Ollama tags,
+    or local GGUF paths.  The backend is auto-detected from the identifier,
+    or you can use an explicit prefix (ollama:, mlx:, gguf:, vllm-mlx:).
+
+    \b
+    Examples:
+        # Two MLX quants
+        infer-check compare \\
+          mlx-community/Llama-3.1-8B-Instruct-4bit \\
+          mlx-community/Llama-3.1-8B-Instruct-8bit
+
+        # MLX native vs Ollama GGUF
+        infer-check compare \\
+          mlx-community/Llama-3.1-8B-Instruct-4bit \\
+          ollama:llama3.1:8b-instruct-q4_K_M
+
+        # Bartowski GGUF vs Unsloth GGUF (both via Ollama)
+        infer-check compare \\
+          ollama:bartowski/Llama-3.1-8B-Instruct-GGUF \\
+          ollama:unsloth/Llama-3.1-8B-Instruct-GGUF
+    """
+    from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.resolve import resolve_model
+    from infer_check.runner import TestRunner
+    from infer_check.suites.loader import load_suite
+
+    # ── Resolve both model specs ─────────────────────────────────────
+    resolved_a = resolve_model(model_a, base_url=base_url, label=label_a)
+    resolved_b = resolve_model(model_b, base_url=base_url, label=label_b)
+
+    console.print(
+        f"[bold cyan]compare[/bold cyan] "
+        f"A={resolved_a.label} ({resolved_a.backend}) "
+        f"vs B={resolved_b.label} ({resolved_b.backend})"
+    )
+
+    prompt_list = load_suite(_resolve_prompts(prompts))
+    console.print(f"  prompts: {len(prompt_list)} from '{prompts}'")
+
+    # ── Build backends ───────────────────────────────────────────────
+    config_a = BackendConfig(
+        backend_type=resolved_a.backend,
+        model_id=resolved_a.model_id,
+        quantization=resolved_a.label,
+        base_url=resolved_a.base_url,
+        extra={"chat": False},
+    )
+    config_b = BackendConfig(
+        backend_type=resolved_b.backend,
+        model_id=resolved_b.model_id,
+        quantization=resolved_b.label,
+        base_url=resolved_b.base_url,
+        extra={"chat": False},
+    )
+    backend_a = get_backend(config_a)
+    backend_b = get_backend(config_b)
+
+    # ── Run comparison ───────────────────────────────────────────────
+    runner = TestRunner()
+    compare_result = asyncio.run(
+        runner.compare(
+            backend_a=backend_a,
+            backend_b=backend_b,
+            prompts=prompt_list,
+            label_a=resolved_a.label,
+            label_b=resolved_b.label,
+        )
+    )
+
+    # ── Persist results ──────────────────────────────────────────────
+    output.mkdir(parents=True, exist_ok=True)
+    safe_a = resolved_a.label.replace("/", "_")
+    safe_b = resolved_b.label.replace("/", "_")
+    out_path = output / f"compare_{safe_a}_vs_{safe_b}.json"
+    compare_result.save(out_path)
+    console.print(f"[green]Results saved to {out_path}[/green]")
+
+    # ── Summary table ────────────────────────────────────────────────
+    table = Table(
+        title=f"Compare: {resolved_a.label} vs {resolved_b.label}",
+        show_header=True,
+        header_style="bold magenta",
+    )
+    table.add_column("metric", style="cyan")
+    table.add_column("value", justify="right")
+
+    n = len(compare_result.comparisons)
+    severities = {"identical": 0, "minor": 0, "moderate": 0, "severe": 0}
+    for c in compare_result.comparisons:
+        sev = c.metadata.get("severity", "unknown") if hasattr(c, "metadata") else "unknown"
+        if sev in severities:
+            severities[sev] += 1
+
+    table.add_row("prompts", str(n))
+    table.add_row(
+        "flip rate",
+        f"[{'red' if compare_result.flip_rate > 0.1 else 'green'}]"
+        f"{compare_result.flip_rate:.1%}[/]",
+    )
+    if compare_result.mean_kl_divergence is not None:
+        table.add_row("mean KL divergence", f"{compare_result.mean_kl_divergence:.6f}")
+    table.add_row("mean text similarity", f"{compare_result.mean_text_similarity:.4f}")
+    table.add_row(
+        "identical / minor / moderate / severe",
+        f"{severities['identical']} / {severities['minor']} / "
+        f"{severities['moderate']} / [red]{severities['severe']}[/red]",
+    )
+
+    console.print(table)
+
+    # ── Per-category breakdown ───────────────────────────────────────
+    if compare_result.per_category_stats:
+        cat_table = Table(
+            title="Per-Category Breakdown",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        cat_table.add_column("category", style="cyan")
+        cat_table.add_column("prompts", justify="right")
+        cat_table.add_column("flip rate", justify="right")
+        cat_table.add_column("mean similarity", justify="right")
+
+        for cat, stats in sorted(compare_result.per_category_stats.items()):
+            cat_table.add_row(
+                cat,
+                str(stats.get("count", 0)),
+                f"{stats.get('flip_rate', 0.0):.1%}",
+                f"{stats.get('mean_similarity', 0.0):.4f}",
+            )
+
+        console.print(cat_table)
+
+    # ── Flipped prompts detail ───────────────────────────────────────
+    flipped = [c for c in compare_result.comparisons if c.metadata.get("flipped", False)]
+    if flipped:
+        flip_table = Table(
+            title=f"Flipped Prompts ({len(flipped)})",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        flip_table.add_column("prompt", style="dim", max_width=50, no_wrap=True)
+        flip_table.add_column("category", style="cyan")
+        flip_table.add_column("strategy", style="dim")
+        flip_table.add_column(f"{resolved_a.label}", max_width=30, no_wrap=True)
+        flip_table.add_column(f"{resolved_b.label}", max_width=30, no_wrap=True)
+        flip_table.add_column("similarity", justify="right")
+
+        for c in flipped:
+            prompt_text = c.baseline.text if hasattr(c.baseline, "text") else c.baseline.prompt_id
+            # Truncate long prompt text for display.
+            if len(prompt_text) > 47:
+                prompt_text = prompt_text[:47] + "..."
+
+            ans_a = c.metadata.get("answer_a", "?")
+            ans_b = c.metadata.get("answer_b", "?")
+            # Truncate long answers.
+            if len(str(ans_a)) > 27:
+                ans_a = str(ans_a)[:27] + "..."
+            if len(str(ans_b)) > 27:
+                ans_b = str(ans_b)[:27] + "..."
+
+            flip_table.add_row(
+                prompt_text,
+                c.metadata.get("category", "?"),
+                c.metadata.get("extraction_strategy", "?"),
+                f"[green]{ans_a}[/green]",
+                f"[red]{ans_b}[/red]",
+                f"{c.text_similarity:.3f}",
+            )
+
+        console.print(flip_table)
+    elif n > 0:
+        console.print("[bold green]No answer flips detected.[/bold green]")
+
+    # ── Optional HTML report ─────────────────────────────────────────
+    if report:
+        report_path = output / f"compare_{safe_a}_vs_{safe_b}.html"
+        console.print(f"[dim]HTML report generation not yet implemented → {report_path}[/dim]")
+
+
+# ---------------------------------------------------------------------------
 # diff
 # ---------------------------------------------------------------------------
 
