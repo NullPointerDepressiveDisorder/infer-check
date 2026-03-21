@@ -78,13 +78,67 @@ class TestRunner:
         if token_divergence_index is None and len(baseline.tokens) != len(test.tokens):
             token_divergence_index = min(len(baseline.tokens), len(test.tokens))
 
+        # KL Divergence computation
+        kl_div = None
+        if baseline.distributions and test.distributions:
+            import numpy as np
+
+            # Truncate to the shorter sequence
+            min_len = min(len(baseline.distributions), len(test.distributions))
+            kl_per_token = []
+
+            for i in range(min_len):
+                p = np.array(baseline.distributions[i])
+                q = np.array(test.distributions[i])
+
+                # Ensure we are dealing with probabilities
+                # If they are logprobs (like from MLX), convert to probs
+                # Actually, MLX gives logprobs. Llama.cpp gives probs.
+                # Let's check if we can detect.
+                # If sum of exp(logprobs) is close to 1, they are logprobs.
+                # If sum is close to 1, they are probs.
+
+                def to_probs(dist: Any) -> Any:
+                    import numpy as np
+
+                    if np.any(dist < 0):  # Likely logprobs
+                        # Numerical stability: shift logprobs
+                        dist = dist - np.max(dist)
+                        probs = np.exp(dist)
+                        return probs / np.sum(probs)
+                    else:  # Likely probs
+                        return dist / np.sum(dist)
+
+                p_prob = to_probs(p)
+                q_prob = to_probs(q)
+
+                # Handle different distribution lengths (e.g. MLX full vocab vs Llama.cpp top 10)
+                # This is tricky. If they are different lengths, we can't easily compute KL.
+                # However, quants of the same model SHOULD have same vocab size.
+                if len(p_prob) == len(q_prob):
+                    # Standard KL divergence: sum(p * log(p/q))
+                    # Using small epsilon to avoid log(0)
+                    eps = 1e-10
+                    p_prob = np.clip(p_prob, eps, 1.0)
+                    q_prob = np.clip(q_prob, eps, 1.0)
+                    kl = np.sum(p_prob * np.log(p_prob / q_prob))
+                    kl_per_token.append(float(kl))
+                else:
+                    # If distributions are different sizes, we might be comparing
+                    # top-K from one model to full vocab of another.
+                    # This is not directly comparable.
+                    pass
+
+            if kl_per_token:
+                kl_div = float(np.mean(kl_per_token))
+
         return ComparisonResult(
             baseline=baseline,
             test=test,
             text_similarity=text_similarity,
             is_failure=is_failure,
             token_divergence_index=token_divergence_index,
-            kl_divergence=None,
+            kl_divergence=kl_div,
             failure_reason=f"[{severity}] Text similarity {text_similarity:.3f} below threshold"
             if is_failure
             else None,
@@ -212,11 +266,15 @@ class TestRunner:
 
                 await backend.cleanup()
 
+        kl_values = [c.kl_divergence for c in all_comparisons if c.kl_divergence is not None]
+        mean_kl = sum(kl_values) / len(kl_values) if kl_values else None
+
         summary = {
             "total_prompts": len(prompts),
             "quantization_levels": quantization_levels,
             "baseline_quant": baseline_quant,
             "failure_counts": failure_counts,
+            "mean_kl_divergence": mean_kl,
         }
 
         return SweepResult(
@@ -343,14 +401,17 @@ class TestRunner:
         for c in comparisons:
             cat_groups[c.metadata.get("category", "general")].append(c)
 
-        per_category: dict[str, dict[str, float | int]] = {}
+        per_category: dict[str, dict[str, Any]] = {}
         for cat, cat_comps in cat_groups.items():
             cat_n = len(cat_comps)
             cat_flips = sum(1 for c in cat_comps if c.metadata.get("flipped", False))
+            cat_kl_values = [c.kl_divergence for c in cat_comps if c.kl_divergence is not None]
+            cat_mean_kl = sum(cat_kl_values) / len(cat_kl_values) if cat_kl_values else None
             per_category[cat] = {
                 "count": cat_n,
                 "flip_rate": cat_flips / cat_n,
                 "mean_similarity": sum(c.text_similarity for c in cat_comps) / cat_n,
+                "mean_kl_divergence": cat_mean_kl,
             }
 
         # ── Cleanup ──────────────────────────────────────────────────

@@ -177,6 +177,7 @@ class OpenAICompatBackend:
         # Parse logprobs ---------------------------------------------------
         tokens: list[str] = []
         logprobs_list: list[float] | None = None
+        distributions: list[list[float]] | None = None
 
         lp_data = choice.get("logprobs")
         if lp_data and lp_data.get("tokens"):
@@ -185,6 +186,13 @@ class OpenAICompatBackend:
             logprobs_list = [
                 float(v) if v is not None and not math.isnan(v) else 0.0 for v in raw_logprobs
             ]
+
+            top_logprobs = lp_data.get("top_logprobs")
+            if top_logprobs:
+                distributions = []
+                for entry in top_logprobs:
+                    # entry is a dict of token: logprob
+                    distributions.append(list(entry.values()))
         else:
             tokens = text.split()
 
@@ -199,6 +207,7 @@ class OpenAICompatBackend:
             model_id=self._model_id,
             tokens=tokens,
             logprobs=logprobs_list,
+            distributions=distributions,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

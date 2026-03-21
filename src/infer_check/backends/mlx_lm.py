@@ -200,27 +200,30 @@ class MLXBackend:
 
         tokens: list[str] = []
         logprobs: list[float] = []
+        distributions: list[list[float]] = []
 
         start = time.perf_counter()
 
-        for step_idx, (token, logprob_val) in enumerate(
+        for step_idx, (token, logprob_dist) in enumerate(
             generate_step(
                 prompt=input_ids,
                 model=self._model,
                 sampler=sampler,
             )
         ):
+            # logprob_dist is mx.array
+            dist_list: list[float] = logprob_dist.tolist()
+            distributions.append(dist_list)
+
             if step_idx >= prompt.max_tokens:
                 break
 
-            token_str = self._tokenizer.decode([token.item()])
+            token_id = int(token.item())
+            token_str = self._tokenizer.decode([token_id])
             tokens.append(token_str)
 
-            # logprob_val may be an mx.array scalar or a float
-            if hasattr(logprob_val, "item"):
-                logprobs.append(float(logprob_val.item()))
-            else:
-                logprobs.append(float(logprob_val))
+            # The logprob of the chosen token
+            logprobs.append(float(dist_list[token_id]))
 
         elapsed_s = time.perf_counter() - start
         text = "".join(tokens)
@@ -236,6 +239,7 @@ class MLXBackend:
             quantization=self._quantization,
             tokens=tokens,
             logprobs=logprobs if logprobs else None,
+            distributions=distributions if distributions else None,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

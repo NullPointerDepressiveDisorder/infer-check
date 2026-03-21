@@ -59,6 +59,7 @@ class InferenceResult(BaseInferModel):
     quantization: str | None = None
     tokens: list[str]
     logprobs: list[float] | None = None
+    distributions: list[list[float]] | None = None
     text: str
     latency_ms: float
     tokens_per_second: float | None = None

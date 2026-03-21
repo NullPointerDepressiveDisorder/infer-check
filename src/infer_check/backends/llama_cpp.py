@@ -36,6 +36,7 @@ class LlamaCppBackend:
             "prompt": prompt.text,
             "n_predict": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
+            "n_probs": 10,  # Request top 10 probabilities for KL divergence
         }
 
         start = time.perf_counter()
@@ -72,17 +73,26 @@ class LlamaCppBackend:
         # Extract per-token data ------------------------------------------
         tokens: list[str] = []
         logprobs: list[float] | None = None
+        distributions: list[list[float]] | None = None
 
         completion_probs = data.get("completion_probabilities")
         if completion_probs:
             logprobs = []
+            distributions = []
             for entry in completion_probs:
                 tok_str = entry.get("content", "")
                 tokens.append(tok_str)
                 # Top prob entry (index 0) contains the chosen token logprob.
                 probs = entry.get("probs", [])
                 if probs:
+                    # llama-server returns probabilities, not log-probabilities
+                    # in 'probs' list, but it's better than nothing.
+                    # Actually, KL divergence can be calculated from probs.
+                    # However, we need a consistent format.
+                    # MLX provides logprobs for the whole vocab.
+                    # llama-server provides probs for top N.
                     logprobs.append(float(probs[0].get("prob", 0.0)))
+                    distributions.append([float(p.get("prob", 0.0)) for p in probs])
         else:
             tokens = content.split()
 
@@ -98,6 +108,7 @@ class LlamaCppBackend:
             model_id=data.get("model", "unknown"),
             tokens=tokens,
             logprobs=logprobs,
+            distributions=distributions,
             text=content,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
