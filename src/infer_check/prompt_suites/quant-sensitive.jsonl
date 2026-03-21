@@ -1,0 +1,20 @@
+{"text": "Calculate 123456 * 987654. Show the step-by-step multiplication.", "category": "multi_digit_arithmetic", "max_tokens": 1024}
+{"text": "What is the 10th root of 2? Provide the result to 10 decimal places.", "category": "precision_numerics", "max_tokens": 256}
+{"text": "Determine if 9999999999999997 is a prime number. Explain your reasoning in detail.", "category": "large_number_reasoning", "max_tokens": 1024}
+{"text": "A farmer has 17 sheep. All but 9 die. How many are left? Explain the logic step-by-step.", "category": "logical_puzzle", "max_tokens": 256}
+{"text": "If a train leaves station A at 60 mph and another leaves station B at 90 mph, and they are 300 miles apart, when and where do they meet? Provide a detailed derivation.", "category": "long_chain_of_thought", "max_tokens": 512}
+{"text": "Write a valid YAML configuration for a Kubernetes Deployment with a custom health check and resource limits. Ensure the indentation is perfect.", "category": "precise_syntax", "max_tokens": 512}
+{"text": "Generate a complex nested JSON object with at least 5 levels of nesting, containing arrays of objects with mixed types. Ensure it's valid JSON.", "category": "precise_syntax", "max_tokens": 512}
+{"text": "Translate this SQL query into a Python list comprehension: SELECT name FROM users WHERE age > 21 AND city = 'New York' ORDER BY name LIMIT 10", "category": "code_translation", "max_tokens": 256}
+{"text": "Explain the difference between a shallow copy and a deep copy in Python with code examples showing the internal memory addresses using id().", "category": "long_chain_of_thought", "max_tokens": 1024}
+{"text": "Solve for x: log2(x) + log2(x-2) = 3. Show every step of the algebraic manipulation.", "category": "algebraic_reasoning", "max_tokens": 512}
+{"text": "What is the 50th Fibonacci number? Calculate it precisely without using scientific notation.", "category": "large_number_reasoning", "max_tokens": 512}
+{"text": "Describe the steps of the SHA-256 hashing algorithm at a high level, but include the specific constants used in the initial hash values.", "category": "precision_numerics", "max_tokens": 1024}
+{"text": "Write a Rust function that uses unsafe code to swap two integers using pointers. Explain why it is unsafe.", "category": "precise_syntax", "max_tokens": 512}
+{"text": "Create a strictly formatted CSV list of the first 20 prime numbers, separated by semicolons, with each value enclosed in double quotes.", "category": "precise_syntax", "max_tokens": 256}
+{"text": "If a clock shows 3:15, what is the exact angle between the hour and minute hands? Provide the derivation.", "category": "logical_puzzle", "max_tokens": 256}
+{"text": "Compare the time complexity of QuickSort and MergeSort in the worst case, providing mathematical proofs for the Big O notation of each.", "category": "long_chain_of_thought", "max_tokens": 1024}
+{"text": "Write a regular expression that matches valid email addresses according to RFC 5322, and explain each part of the regex.", "category": "precise_syntax", "max_tokens": 512}
+{"text": "What is the exact value of e (Euler's number) to 30 decimal places?", "category": "precision_numerics", "max_tokens": 256}
+{"text": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Explain your reasoning.", "category": "logical_puzzle", "max_tokens": 256}
+{"text": "Analyze the potential for race conditions in a multithreaded Python program that increments a global counter without locks. Provide a code example and explain how to fix it using threading.Lock.", "category": "long_chain_of_thought", "max_tokens": 1024}

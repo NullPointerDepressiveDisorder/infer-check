@@ -80,7 +80,7 @@ infer-check sweep \
   --output ./results/sweep/
 ```
 
-`--prompts` accepts either a bundled suite name (`reasoning`, `code`, `adversarial-numerics`, `determinism`, `long-context`) or a path to any `.jsonl` file.
+`--prompts` accepts either a bundled suite name (`reasoning`, `code`, `adversarial-numerics`, `determinism`, `long-context`, `quant-sensitive`) or a path to any `.jsonl` file.
 
 The baseline is automatically run twice as a self-check — if it's not 50/50 identical, your comparison data is unreliable.
 
@@ -158,6 +158,7 @@ Curated prompts targeting known quantization failure modes:
 | `code.jsonl` | 49 | Python, JSON, SQL generation |
 | `adversarial-numerics.jsonl` | 30 | IEEE 754 edge cases, overflow, precision |
 | `long-context.jsonl` | 10 | Tables and transcripts with recall questions |
+| `quant-sensitive.jsonl` | 20 | Multi-digit arithmetic, long CoT, precise syntax |
 | `determinism.jsonl` | 50 | High-entropy continuations for determinism testing |
 
 All suites ship with the package — no need to clone the repo. Custom suites are JSONL files with one object per line:
