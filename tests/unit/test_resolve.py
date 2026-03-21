@@ -53,8 +53,16 @@ class TestHeuristicDetection:
 
     def test_gguf_repo_heuristic(self) -> None:
         r = resolve_model("bartowski/Llama-3.1-8B-Instruct-GGUF")
-        assert r.backend == "openai-compat"
+        assert r.backend == "llama-cpp"
         assert r.label == "Llama-3.1-8B-Instruct-GGUF"
+
+    def test_maziyarpanahi_gguf_heuristic(self) -> None:
+        r = resolve_model("MaziyarPanahi/Meta-Llama-3-8B-Instruct-GGUF")
+        assert r.backend == "llama-cpp"
+
+    def test_mlx_keyword_heuristic(self) -> None:
+        r = resolve_model("some-user/my-special-mlx-model")
+        assert r.backend == "mlx-lm"
 
     def test_ollama_style_tag(self) -> None:
         r = resolve_model("llama3.1:8b-instruct-q4_K_M")

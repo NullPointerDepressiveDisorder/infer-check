@@ -45,7 +45,7 @@ def main() -> None:
         "4bit=mlx-community/Llama-3.1-8B-Instruct-4bit'"
     ),
 )
-@click.option("--backend", default="mlx-lm", show_default=True, help="Backend type.")
+@click.option("--backend", default=None, help="Backend type (auto-detected if omitted).")
 @click.option(
     "--prompts",
     required=True,
@@ -66,7 +66,7 @@ def main() -> None:
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
 def sweep(
     models: str,
-    backend: str,
+    backend: str | None,
     prompts: str,
     output: Path,
     baseline: str | None,
@@ -83,10 +83,9 @@ def sweep(
           --models "bf16=mlx-community/Llama-3.1-8B-Instruct-bf16,
                     4bit=mlx-community/Llama-3.1-8B-Instruct-4bit,
                     3bit=mlx-community/Llama-3.1-8B-Instruct-3bit" \\
-          --backend mlx-lm \\
           --prompts ./prompt-suites/reasoning.jsonl
     """
-    from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
     from infer_check.suites.loader import load_suite
 
@@ -113,10 +112,7 @@ def sweep(
         console.print(f"[red]Baseline '{baseline_label}' not found in model map.[/red]")
         raise SystemExit(1)
 
-    console.print(
-        f"[bold cyan]sweep[/bold cyan] backend={backend} "
-        f"baseline={baseline_label} models={quant_levels}"
-    )
+    console.print(f"[bold cyan]sweep[/bold cyan] baseline={baseline_label} models={quant_levels}")
     for label, path in model_map.items():
         tag = " (baseline)" if label == baseline_label else ""
         console.print(f"  {label}: {path}{tag}")
@@ -126,13 +122,12 @@ def sweep(
     # Build a separate backend for each model
     backend_map: dict[str, Any] = {}
     for label, model_path in model_map.items():
-        config = BackendConfig(
-            backend_type=backend,  # type: ignore[arg-type]
-            model_id=model_path,
-            quantization=label,
+        backend_map[label] = get_backend_for_model(
+            model_str=model_path,
+            backend_type=backend,
             base_url=base_url,
+            quantization=label,
         )
-        backend_map[label] = get_backend(config)
 
     runner = TestRunner()
     result = asyncio.run(
@@ -285,12 +280,11 @@ def compare(
           ollama:bartowski/Llama-3.1-8B-Instruct-GGUF \\
           ollama:unsloth/Llama-3.1-8B-Instruct-GGUF
     """
-    from infer_check.backends.base import BackendConfig, get_backend
+    # ── Resolve both model specs ─────────────────────────────────────
     from infer_check.resolve import resolve_model
     from infer_check.runner import TestRunner
     from infer_check.suites.loader import load_suite
 
-    # ── Resolve both model specs ─────────────────────────────────────
     resolved_a = resolve_model(model_a, base_url=base_url, label=label_a)
     resolved_b = resolve_model(model_b, base_url=base_url, label=label_b)
 
@@ -304,6 +298,8 @@ def compare(
     console.print(f"  prompts: {len(prompt_list)} from '{prompts}'")
 
     # ── Build backends ───────────────────────────────────────────────
+    from infer_check.backends.base import BackendConfig, get_backend
+
     config_a = BackendConfig(
         backend_type=resolved_a.backend,
         model_id=resolved_a.model_id,
@@ -572,7 +568,7 @@ def diff(
 
 @main.command()
 @click.option("--model", required=True, help="Model ID or HuggingFace path.")
-@click.option("--backend", default="mlx-lm", show_default=True, help="Backend type.")
+@click.option("--backend", default=None, help="Backend type (auto-detected if omitted).")
 @click.option(
     "--prompts",
     required=True,
@@ -594,32 +590,31 @@ def diff(
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
 def stress(
     model: str,
-    backend: str,
+    backend: str | None,
     prompts: str,
     output: Path,
     concurrency: str,
     base_url: str | None,
 ) -> None:
     """Stress-test a backend with varying concurrency levels."""
-    from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
     from infer_check.suites.loader import load_suite
 
     concurrency_levels = [int(c.strip()) for c in concurrency.split(",") if c.strip()]
 
+    backend_instance = get_backend_for_model(
+        model_str=model,
+        backend_type=backend,
+        base_url=base_url,
+    )
+
     console.print(
-        f"[bold cyan]stress[/bold cyan] model={model} backend={backend} "
+        f"[bold cyan]stress[/bold cyan] model={model} backend={backend_instance.name} "
         f"concurrency={concurrency_levels}"
     )
 
     prompt_list = load_suite(_resolve_prompts(prompts))
-
-    config = BackendConfig(
-        backend_type=backend,  # type: ignore[arg-type]
-        model_id=model,
-        base_url=base_url,
-    )
-    backend_instance = get_backend(config)
 
     runner = TestRunner()
     stress_results = asyncio.run(
@@ -663,7 +658,7 @@ def stress(
 
 @main.command()
 @click.option("--model", required=True, help="Model ID or HuggingFace path.")
-@click.option("--backend", default="mlx-lm", show_default=True, help="Backend type.")
+@click.option("--backend", default=None, help="Backend type (auto-detected if omitted).")
 @click.option(
     "--prompts",
     required=True,
@@ -680,27 +675,29 @@ def stress(
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
 def determinism(
     model: str,
-    backend: str,
+    backend: str | None,
     prompts: str,
     output: Path,
     runs: int,
     base_url: str | None,
 ) -> None:
     """Test whether a backend produces identical outputs across repeated runs at temperature=0."""
-    from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
     from infer_check.suites.loader import load_suite
 
-    console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend} runs={runs}")
-
-    prompt_list = load_suite(_resolve_prompts(prompts))
-
-    config = BackendConfig(
-        backend_type=backend,  # type: ignore[arg-type]
-        model_id=model,
+    backend_instance = get_backend_for_model(
+        model_str=model,
+        backend_type=backend,
         base_url=base_url,
     )
-    backend_instance = get_backend(config)
+
+    console.print(
+        f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} "
+        f"runs={runs}"
+    )
+
+    prompt_list = load_suite(_resolve_prompts(prompts))
 
     runner = TestRunner()
     det_results = asyncio.run(

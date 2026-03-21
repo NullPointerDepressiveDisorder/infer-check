@@ -137,7 +137,11 @@ def resolve_model(
     spec_lower = spec.lower()
 
     # MLX repos (mlx-community org or -mlx suffix).
-    if spec_lower.startswith("mlx-community/") or spec_lower.endswith("-mlx"):
+    if (
+        spec_lower.startswith("mlx-community/")
+        or spec_lower.endswith("-mlx")
+        or "mlx" in spec_lower
+    ):
         return ResolvedModel(
             backend="mlx-lm",
             model_id=spec,
@@ -145,12 +149,14 @@ def resolve_model(
             label=label or _make_label(spec),
         )
 
-    # GGUF repos (typically served via Ollama).
-    if "-gguf" in spec_lower:
+    # GGUF repos (typically served via Ollama or llama-cpp).
+    gguf_indicators = ["gguf", "bartowski", "maziyarpanahi", "mradermacher"]
+    if any(ind in spec_lower for ind in gguf_indicators):
+        # Prefer llama-cpp for explicit GGUF repos unless it's an Ollama tag.
         return ResolvedModel(
-            backend="openai-compat",
+            backend="llama-cpp",
             model_id=spec,
-            base_url=base_url or _DEFAULT_URLS["openai-compat"],
+            base_url=base_url or _DEFAULT_URLS["llama-cpp"],
             label=label or _make_label(spec),
         )
 

@@ -211,8 +211,7 @@ class MLXBackend:
                 sampler=sampler,
             )
         ):
-            # logprob_dist is mx.array
-            dist_list: list[float] = logprob_dist.tolist()
+            dist_list: list[float] = logprob_dist.tolist()  # type: ignore[assignment]
             distributions.append(dist_list)
 
             if step_idx >= prompt.max_tokens:
