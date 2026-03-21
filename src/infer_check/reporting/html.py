@@ -16,6 +16,7 @@ from typing import Any
 from jinja2 import Environment, Undefined
 
 from infer_check.types import (
+    CompareResult,
     ComparisonResult,
     DeterminismResult,
     StressResult,
@@ -668,6 +669,11 @@ def _load_results(results_dir: Path) -> dict[str, list[Any]]:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            continue
+
+        compare = _try_load(raw, CompareResult)
+        if compare is not None:
+            sections["diff"].append(compare.comparisons)
             continue
 
         sweep = _try_load(raw, SweepResult)

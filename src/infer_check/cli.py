@@ -431,13 +431,16 @@ def compare(
             )
 
         console.print(flip_table)
+
+    # ── Report generation ───────────────────────────────────────────
+    if report:
+        from infer_check.reporting.html import generate_report
+
+        report_path = output / f"report_{safe_a}_vs_{safe_b}.html"
+        generate_report(output, report_path)
+        console.print(f"[green]HTML report generated at {report_path}[/green]")
     elif n > 0:
         console.print("[bold green]No answer flips detected.[/bold green]")
-
-    # ── Optional HTML report ─────────────────────────────────────────
-    if report:
-        report_path = output / f"compare_{safe_a}_vs_{safe_b}.html"
-        console.print(f"[dim]HTML report generation not yet implemented → {report_path}[/dim]")
 
 
 # ---------------------------------------------------------------------------
