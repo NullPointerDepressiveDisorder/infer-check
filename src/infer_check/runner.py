@@ -1,7 +1,6 @@
 import asyncio
 import difflib
 import json
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,6 +17,7 @@ from infer_check.types import (
     StressResult,
     SweepResult,
 )
+from infer_check.utils import sanitize_filename
 
 
 class TestRunner:
@@ -456,20 +456,8 @@ class TestRunner:
         timestamp_int = int(datetime.now(UTC).timestamp())
 
         # Sanitize labels to avoid path traversal and filesystem issues
-        def sanitize_label(label: str) -> str:
-            """Convert a label to a filesystem-safe string."""
-            # Replace path separators and parent directory references
-            safe = label.replace("/", "_").replace("\\", "_")
-            safe = safe.replace("..", "_")
-            # Remove other potentially problematic characters
-            safe = re.sub(r'[<>:"|?*\x00-\x1f]', "_", safe)
-            # Collapse multiple underscores and strip edges
-            safe = re.sub(r"_+", "_", safe).strip("_")
-            # Ensure we hopefully have something left
-            return safe if safe else "model"
-
-        safe_a = sanitize_label(label_a)
-        safe_b = sanitize_label(label_b)
+        safe_a = sanitize_filename(label_a)
+        safe_b = sanitize_filename(label_b)
 
         checkpoint_path = self.cache_dir / f"compare_{safe_a}_vs_{safe_b}_{timestamp_int}.json"
         self._save_checkpoint(comparisons, checkpoint_path)

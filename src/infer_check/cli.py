@@ -330,22 +330,10 @@ def compare(
     # ── Persist results ──────────────────────────────────────────────
     output.mkdir(parents=True, exist_ok=True)
 
-    def _sanitize_filename(label: str) -> str:
-        """Sanitize a label for safe use in filenames across platforms."""
-        # Replace problematic characters with underscores
-        # This matches the sanitization used in TestRunner.compare()
-        import re
+    from infer_check.utils import sanitize_filename
 
-        # Replace filesystem-unsafe characters: / \ : * ? " < > |
-        sanitized = re.sub(r'[/\\:*?"<>|]', "_", label)
-        # Collapse multiple underscores into one
-        sanitized = re.sub(r"_+", "_", sanitized)
-        # Strip leading/trailing underscores
-        sanitized = sanitized.strip("_")
-        return sanitized
-
-    safe_a = _sanitize_filename(resolved_a.label)
-    safe_b = _sanitize_filename(resolved_b.label)
+    safe_a = sanitize_filename(resolved_a.label)
+    safe_b = sanitize_filename(resolved_b.label)
     out_path = output / f"compare_{safe_a}_vs_{safe_b}.json"
     compare_result.save(out_path)
     console.print(f"[green]Results saved to {out_path}[/green]")
