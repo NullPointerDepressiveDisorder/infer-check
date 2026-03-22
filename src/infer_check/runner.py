@@ -126,10 +126,10 @@ class TestRunner:
                     q_prob = to_probs(t_dist)
                 # llama-server: id_0, id_1, ... (top-K)
                 elif b_meta and t_meta and "id_0" in b_meta and "id_0" in t_meta:
-                    # Align on union of token IDs
-                    b_ids = {int(v): i for k, v in b_meta.items() if k.startswith("id_")}
-                    t_ids = {int(v): i for k, v in t_meta.items() if k.startswith("id_")}
-                    all_ids = sorted(list(set(b_ids.keys()) | set(t_ids.keys())))
+                    # Align on union of token IDs (can be int IDs or token strings)
+                    b_ids = {v: i for k, v in b_meta.items() if k.startswith("id_")}
+                    t_ids = {v: i for k, v in t_meta.items() if k.startswith("id_")}
+                    all_ids = sorted(set(b_ids.keys()) | set(t_ids.keys()), key=lambda x: str(x))
 
                     p_raw = np.zeros(len(all_ids))
                     q_raw = np.zeros(len(all_ids))

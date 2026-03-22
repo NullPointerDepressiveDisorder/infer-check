@@ -204,7 +204,7 @@ class MLXBackend:
         tokens: list[str] = []
         logprobs: list[float] = []
         distributions: list[list[float]] = []
-        distribution_metadata: list[dict[str, int]] = []
+        distribution_metadata: list[dict[str, int | str]] = []
 
         start = time.perf_counter()
 
@@ -238,7 +238,7 @@ class MLXBackend:
                 dist_indices = cast(list[int], top_k_indices.tolist())
 
                 distributions.append(dist_list)
-                meta = {"is_aligned": 1}
+                meta: dict[str, int | str] = {"is_aligned": 1}
                 for i, idx in enumerate(dist_indices):
                     meta[f"id_{i}"] = int(idx)
                 distribution_metadata.append(meta)

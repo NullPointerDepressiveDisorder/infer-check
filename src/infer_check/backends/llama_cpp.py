@@ -75,7 +75,7 @@ class LlamaCppBackend:
         tokens: list[str] = []
         logprobs: list[float] | None = None
         distributions: list[list[float]] | None = None
-        distribution_metadata: list[dict[str, int]] | None = None
+        distribution_metadata: list[dict[str, int | str]] | None = None
 
         completion_probs = data.get("completion_probabilities")
         if completion_probs:
@@ -101,7 +101,7 @@ class LlamaCppBackend:
                     distributions.append(dist_logprobs)
 
                     # Store token IDs to allow alignment if needed.
-                    dist_meta = {}
+                    dist_meta: dict[str, int | str] = {}
                     for i, p in enumerate(probs):
                         if "id" in p:
                             dist_meta[f"id_{i}"] = int(p["id"])

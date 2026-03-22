@@ -178,7 +178,7 @@ class OpenAICompatBackend:
         tokens: list[str] = []
         logprobs_list: list[float] | None = None
         distributions: list[list[float]] | None = None
-        distribution_metadata: list[dict[str, int]] | None = None
+        distribution_metadata: list[dict[str, int | str]] | None = None
 
         lp_data = choice.get("logprobs")
         if lp_data and lp_data.get("tokens"):
@@ -191,12 +191,16 @@ class OpenAICompatBackend:
             top_logprobs = lp_data.get("top_logprobs")
             if top_logprobs:
                 distributions = []
-                # OpenAI top_logprobs doesn't typically provide token IDs,
-                # but some backends (vLLM) might.
-                # For standard OpenAI, we skip alignment if IDs are missing.
+                distribution_metadata = []
                 for entry in top_logprobs:
                     # entry is a dict of token: logprob
-                    distributions.append(list(entry.values()))
+                    # Sort by token string to ensure deterministic order
+                    sorted_items = sorted(entry.items())
+                    distributions.append([float(v) for _, v in sorted_items])
+                    meta = {}
+                    for i, (tok, _) in enumerate(sorted_items):
+                        meta[f"id_{i}"] = tok
+                    distribution_metadata.append(meta)
         else:
             tokens = text.split()
 
