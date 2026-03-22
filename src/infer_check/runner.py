@@ -38,9 +38,7 @@ class TestRunner:
         else:
             path.write_text(json.dumps(results, indent=2), encoding="utf-8")
 
-    def _compare(
-        self, baseline: InferenceResult, test: InferenceResult, threshold: float = 0.5
-    ) -> ComparisonResult:
+    def _compare(self, baseline: InferenceResult, test: InferenceResult, threshold: float = 0.5) -> ComparisonResult:
         """Compare a test result against a baseline.
 
         Threshold is the *minimum* text similarity to pass. Default 0.5
@@ -130,6 +128,18 @@ class TestRunner:
                     # Align on union of token IDs (can be int IDs or token strings)
                     b_ids = {v: i for k, v in b_meta.items() if k.startswith("id_")}
                     t_ids = {v: i for k, v in t_meta.items() if k.startswith("id_")}
+
+                    # Skip if ID types are different (e.g. int vs str)
+                    b_id_types = {type(v) for v in b_ids}
+                    t_id_types = {type(v) for v in t_ids}
+                    if b_id_types != t_id_types:
+                        continue
+
+                    # Skip if there's no overlap between the two sets of IDs
+                    common_ids = set(b_ids.keys()) & set(t_ids.keys())
+                    if not common_ids:
+                        continue
+
                     all_ids = sorted(set(b_ids.keys()) | set(t_ids.keys()), key=lambda x: str(x))
 
                     p_raw = np.zeros(len(all_ids))
@@ -220,8 +230,7 @@ class TestRunner:
                     from rich.console import Console
 
                     Console().print(
-                        f"[yellow]  ⚠ Skipping prompt '{prompt.text[:60]}...' "
-                        f"at {baseline_quant}: {exc}[/yellow]"
+                        f"[yellow]  ⚠ Skipping prompt '{prompt.text[:60]}...' at {baseline_quant}: {exc}[/yellow]"
                     )
                     progress.advance(task)
                     continue
@@ -241,9 +250,7 @@ class TestRunner:
                 except Exception as exc:
                     from rich.console import Console
 
-                    Console().print(
-                        f"[yellow]  ⚠ Self-check failed for '{prompt.text[:60]}...': {exc}[/yellow]"
-                    )
+                    Console().print(f"[yellow]  ⚠ Self-check failed for '{prompt.text[:60]}...': {exc}[/yellow]")
                     progress.advance(task)
                     continue
                 if not res2.quantization:
@@ -272,8 +279,7 @@ class TestRunner:
                         from rich.console import Console
 
                         Console().print(
-                            f"[yellow]  ⚠ Skipping prompt '{prompt.text[:60]}...' "
-                            f"at {quant}: {exc}[/yellow]"
+                            f"[yellow]  ⚠ Skipping prompt '{prompt.text[:60]}...' at {quant}: {exc}[/yellow]"
                         )
                         progress.advance(task)
                         continue
@@ -359,9 +365,7 @@ class TestRunner:
                 except Exception as exc:
                     from rich.console import Console
 
-                    Console().print(
-                        f"[yellow]  ⚠ {label_a} failed for '{prompt.text[:60]}...': {exc}[/yellow]"
-                    )
+                    Console().print(f"[yellow]  ⚠ {label_a} failed for '{prompt.text[:60]}...': {exc}[/yellow]")
                     progress.advance(task)
                     continue
                 if not res.quantization:
@@ -377,9 +381,7 @@ class TestRunner:
                 except Exception as exc:
                     from rich.console import Console
 
-                    Console().print(
-                        f"[yellow]  ⚠ {label_b} failed for '{prompt.text[:60]}...': {exc}[/yellow]"
-                    )
+                    Console().print(f"[yellow]  ⚠ {label_b} failed for '{prompt.text[:60]}...': {exc}[/yellow]")
                     progress.advance(task)
                     continue
                 if not res.quantization:
@@ -499,18 +501,14 @@ class TestRunner:
             task = progress.add_task("[green]Diffing test...", total=total_tasks)
 
             # Baseline pass
-            progress.update(
-                task, description=f"[green]Running baseline backend ({baseline_backend.name})..."
-            )
+            progress.update(task, description=f"[green]Running baseline backend ({baseline_backend.name})...")
             for prompt in prompts:
                 try:
                     res = await baseline_backend.generate(prompt)
                 except Exception as exc:
                     from rich.console import Console
 
-                    Console().print(
-                        f"[yellow]  ⚠ Baseline failed for '{prompt.text[:60]}...': {exc}[/yellow]"
-                    )
+                    Console().print(f"[yellow]  ⚠ Baseline failed for '{prompt.text[:60]}...': {exc}[/yellow]")
                     progress.advance(task)
                     continue
                 baseline_results[res.prompt_id] = res
@@ -518,9 +516,7 @@ class TestRunner:
 
             # Test backends pass
             for test_backend in test_backends:
-                progress.update(
-                    task, description=f"[green]Running test backend ({test_backend.name})..."
-                )
+                progress.update(task, description=f"[green]Running test backend ({test_backend.name})...")
                 for prompt in prompts:
                     try:
                         test_res = await test_backend.generate(prompt)
@@ -528,8 +524,7 @@ class TestRunner:
                         from rich.console import Console
 
                         Console().print(
-                            f"[yellow]  ⚠ {test_backend.name} failed for "
-                            f"'{prompt.text[:60]}...': {exc}[/yellow]"
+                            f"[yellow]  ⚠ {test_backend.name} failed for '{prompt.text[:60]}...': {exc}[/yellow]"
                         )
                         progress.advance(task)
                         continue
@@ -555,16 +550,12 @@ class TestRunner:
         baseline_results: dict[str, InferenceResult] = {}
 
         with Progress() as progress:
-            task = progress.add_task(
-                "[magenta]Running stress test...", total=len(concurrency_levels) * len(prompts)
-            )
+            task = progress.add_task("[magenta]Running stress test...", total=len(concurrency_levels) * len(prompts))
 
             for concurrency in concurrency_levels:
                 sem = asyncio.Semaphore(concurrency)
 
-                async def _run(
-                    p: Prompt, _sem: asyncio.Semaphore = sem
-                ) -> InferenceResult | Exception:
+                async def _run(p: Prompt, _sem: asyncio.Semaphore = sem) -> InferenceResult | Exception:
                     async with _sem:
                         try:
                             return await backend.generate(p)
@@ -627,9 +618,7 @@ class TestRunner:
         results: list[DeterminismResult] = []
 
         with Progress() as progress:
-            task = progress.add_task(
-                "[yellow]Running determinism test...", total=len(prompts) * num_runs
-            )
+            task = progress.add_task("[yellow]Running determinism test...", total=len(prompts) * num_runs)
 
             for prompt in prompts:
                 # Force temp 0 for determinism checks
@@ -645,8 +634,7 @@ class TestRunner:
                         from rich.console import Console
 
                         Console().print(
-                            f"[yellow]  ⚠ Determinism run failed for "
-                            f"'{prompt.text[:60]}...': {exc}[/yellow]"
+                            f"[yellow]  ⚠ Determinism run failed for '{prompt.text[:60]}...': {exc}[/yellow]"
                         )
                         progress.advance(task)
                         continue
