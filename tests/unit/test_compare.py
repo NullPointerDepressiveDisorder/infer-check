@@ -338,5 +338,23 @@ class TestCompareRunner:
 
     def test_checkpoint_written(self, test_runner: TestRunner, tmp_path: Path) -> None:
         """A checkpoint file is written to cache_dir."""
-        # prompts = _make_prompts(1)
-        # resp = {prompts[0].id: "ok"}
+        prompts = _make_prompts(1)
+        resp = {prompts[0].id: "ok"}
+
+        backend_a = self._make_mock_backend("a", resp)
+        backend_b = self._make_mock_backend("b", resp)
+
+        # Run a compare so that a checkpoint should be written.
+        asyncio.run(
+            test_runner.compare(
+                backend_a=backend_a,
+                backend_b=backend_b,
+                prompts=prompts,
+            )
+        )
+
+        cache_dir = Path(test_runner.cache_dir)
+        assert cache_dir.exists() and cache_dir.is_dir()
+
+        checkpoint_files = list(cache_dir.glob("compare_*.json"))
+        assert checkpoint_files, "Expected at least one compare_*.json checkpoint file to be written"

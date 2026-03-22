@@ -140,7 +140,8 @@ def resolve_model(
     if (
         spec_lower.startswith("mlx-community/")
         or spec_lower.endswith("-mlx")
-        or "mlx" in spec_lower
+        or "/mlx-" in spec_lower
+        or spec_lower.startswith("mlx-")
     ):
         return ResolvedModel(
             backend="mlx-lm",

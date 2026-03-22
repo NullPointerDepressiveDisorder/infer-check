@@ -73,8 +73,7 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
 
         if not config.base_url:
             raise ValueError(
-                "openai-compat backend requires --base-url. "
-                "Example: --base-url http://localhost:11434/v1 (Ollama)"
+                "openai-compat backend requires --base-url. Example: --base-url http://localhost:11434/v1 (Ollama)"
             )
         return OpenAICompatBackend(
             base_url=config.base_url,
@@ -100,20 +99,13 @@ def get_backend_for_model(
     """
     from infer_check.resolve import resolve_model
 
-    if backend_type:
-        config = BackendConfig(
-            backend_type=backend_type,  # type: ignore
-            model_id=model_str,
-            base_url=base_url,
-            quantization=quantization,
-        )
-    else:
-        resolved = resolve_model(model_str, base_url=base_url)
-        config = BackendConfig(
-            backend_type=resolved.backend,
-            model_id=resolved.model_id,
-            base_url=resolved.base_url,
-            quantization=quantization or resolved.label,
-        )
+    # Always normalize the model string first to ensure consistent model_id/base_url
+    resolved = resolve_model(model_str, base_url=base_url)
+    config = BackendConfig(
+        backend_type=backend_type or resolved.backend,  # type: ignore
+        model_id=resolved.model_id,
+        base_url=resolved.base_url,
+        quantization=quantization or resolved.label,
+    )
 
     return get_backend(config)

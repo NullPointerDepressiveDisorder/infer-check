@@ -54,9 +54,7 @@ class MLXBackend:
                 return self._generate_simple(prompt)
             except Exception as inner:
                 raise RuntimeError(
-                    f"MLX generation failed for prompt '{prompt.text[:80]}...'\n"
-                    f"Model: {self._model_id}\n"
-                    f"Error: {inner}"
+                    f"MLX generation failed for prompt '{prompt.text[:80]}...'\nModel: {self._model_id}\nError: {inner}"
                 ) from inner
 
     async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
@@ -101,17 +99,14 @@ class MLXBackend:
         try:
             from mlx_lm import load
         except ImportError:
-            raise RuntimeError(
-                "mlx-lm not installed. Install with: pip install infer-check[mlx]"
-            ) from None
+            raise RuntimeError("mlx-lm not installed. Install with: pip install infer-check[mlx]") from None
 
         from pathlib import Path
 
         model_path = Path(self._model_id).expanduser()
         if model_path.is_absolute() and not model_path.exists():
             raise FileNotFoundError(
-                f"Model path does not exist: {model_path}\n"
-                f"Check the path or use a HuggingFace repo ID instead."
+                f"Model path does not exist: {model_path}\nCheck the path or use a HuggingFace repo ID instead."
             )
 
         repo_or_path = str(model_path) if model_path.exists() else self._model_id
@@ -142,16 +137,9 @@ class MLXBackend:
         Raw prompts sent to Instruct models produce undefined behavior that
         varies across quantization levels, making comparisons meaningless.
         """
-        if (
-            hasattr(self._tokenizer, "apply_chat_template")
-            and self._tokenizer.chat_template is not None
-        ):
+        if hasattr(self._tokenizer, "apply_chat_template") and self._tokenizer.chat_template is not None:
             messages = [{"role": "user", "content": text}]
-            return str(
-                self._tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-            )
+            return str(self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
         return text
 
     def _generate_simple(self, prompt: Prompt) -> InferenceResult:
@@ -225,8 +213,20 @@ class MLXBackend:
                 # Since we need to move to CPU anyway for serialization, we can do it there.
                 # But to avoid huge tolist(), we can use mx.topk if available or just move a bit.
 
+                # Clamp K to the vocabulary size to avoid out-of-bounds issues.
+                vocab_size = int(logprob_dist.shape[0])
+                if vocab_size <= 0:
+                    # Nothing to record for this step.
+                    continue
+                effective_top_k = int(top_k)
+                if effective_top_k < 1:
+                    # Should not happen due to the outer condition, but guard defensively.
+                    continue
+                if effective_top_k > vocab_size:
+                    effective_top_k = vocab_size
+
                 # Get top-K indices and values
-                top_k_indices = mx.argpartition(-logprob_dist, top_k - 1)[:top_k]
+                top_k_indices = mx.argpartition(-logprob_dist, effective_top_k - 1)[:effective_top_k]
                 top_k_values = logprob_dist[top_k_indices]
 
                 # Sort them for consistency
@@ -238,7 +238,7 @@ class MLXBackend:
                 dist_indices = cast(list[int], top_k_indices.tolist())
 
                 distributions.append(dist_list)
-                meta: dict[str, int | str] = {"is_aligned": 1}
+                meta: dict[str, int | str] = {}
                 for i, idx in enumerate(dist_indices):
                     meta[f"id_{i}"] = int(idx)
                 distribution_metadata.append(meta)

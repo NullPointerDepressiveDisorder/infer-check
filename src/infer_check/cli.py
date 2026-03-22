@@ -227,9 +227,7 @@ def sweep(
 @click.option(
     "--base-url",
     default=None,
-    help=(
-        "Base URL override for HTTP backends. Applied to both models unless they resolve to mlx-lm."
-    ),
+    help=("Base URL override for HTTP backends. Applied to both models unless they resolve to mlx-lm."),
 )
 @click.option(
     "--label-a",
@@ -331,8 +329,23 @@ def compare(
 
     # ── Persist results ──────────────────────────────────────────────
     output.mkdir(parents=True, exist_ok=True)
-    safe_a = resolved_a.label.replace("/", "_")
-    safe_b = resolved_b.label.replace("/", "_")
+
+    def _sanitize_filename(label: str) -> str:
+        """Sanitize a label for safe use in filenames across platforms."""
+        # Replace problematic characters with underscores
+        # This matches the sanitization used in TestRunner.compare()
+        import re
+
+        # Replace filesystem-unsafe characters: / \ : * ? " < > |
+        sanitized = re.sub(r'[/\\:*?"<>|]', "_", label)
+        # Collapse multiple underscores into one
+        sanitized = re.sub(r"_+", "_", sanitized)
+        # Strip leading/trailing underscores
+        sanitized = sanitized.strip("_")
+        return sanitized
+
+    safe_a = _sanitize_filename(resolved_a.label)
+    safe_b = _sanitize_filename(resolved_b.label)
     out_path = output / f"compare_{safe_a}_vs_{safe_b}.json"
     compare_result.save(out_path)
     console.print(f"[green]Results saved to {out_path}[/green]")
@@ -356,8 +369,7 @@ def compare(
     table.add_row("prompts", str(n))
     table.add_row(
         "flip rate",
-        f"[{'red' if compare_result.flip_rate > 0.1 else 'green'}]"
-        f"{compare_result.flip_rate:.1%}[/]",
+        f"[{'red' if compare_result.flip_rate > 0.1 else 'green'}]{compare_result.flip_rate:.1%}[/]",
     )
     if compare_result.mean_kl_divergence is not None:
         table.add_row("mean KL divergence", f"{compare_result.mean_kl_divergence:.6f}")
@@ -494,16 +506,12 @@ def diff(
     from infer_check.suites.loader import load_suite
 
     backend_names = [b.strip() for b in backends.split(",") if b.strip()]
-    url_list: list[str | None] = (
-        [u.strip() for u in base_urls.split(",")] if base_urls else [None] * len(backend_names)
-    )
+    url_list: list[str | None] = [u.strip() for u in base_urls.split(",")] if base_urls else [None] * len(backend_names)
     # Pad url_list if shorter than backend_names
     while len(url_list) < len(backend_names):
         url_list.append(None)
 
-    console.print(
-        f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}"
-    )
+    console.print(f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}")
 
     prompt_list = load_suite(_resolve_prompts(prompts))
 
@@ -613,8 +621,7 @@ def stress(
     )
 
     console.print(
-        f"[bold cyan]stress[/bold cyan] model={model} backend={backend_instance.name} "
-        f"concurrency={concurrency_levels}"
+        f"[bold cyan]stress[/bold cyan] model={model} backend={backend_instance.name} concurrency={concurrency_levels}"
     )
 
     prompt_list = load_suite(_resolve_prompts(prompts))
@@ -695,10 +702,7 @@ def determinism(
         base_url=base_url,
     )
 
-    console.print(
-        f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} "
-        f"runs={runs}"
-    )
+    console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")
 
     prompt_list = load_suite(_resolve_prompts(prompts))
 
@@ -743,8 +747,7 @@ def determinism(
     if det_results:
         overall = sum(r.determinism_score for r in det_results) / len(det_results)
         console.print(
-            f"\n[bold]Overall determinism score:[/bold] "
-            f"[{'green' if overall == 1.0 else 'yellow'}]{overall:.2%}[/]"
+            f"\n[bold]Overall determinism score:[/bold] [{'green' if overall == 1.0 else 'yellow'}]{overall:.2%}[/]"
         )
 
 
