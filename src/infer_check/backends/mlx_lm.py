@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gc
 import time
-from typing import Any
+from typing import Any, cast
 
 from infer_check.types import InferenceResult, Prompt
 
@@ -198,6 +198,9 @@ class MLXBackend:
         formatted = self._format_prompt(prompt.text)
         input_ids = self._tokenizer.encode(formatted, return_tensors="mlx")
 
+        # Configurable top-K to avoid memory explosion. Default to 10.
+        top_k = prompt.metadata.get("top_k_logprobs", 10) if prompt.metadata else 10
+
         tokens: list[str] = []
         logprobs: list[float] = []
         distributions: list[list[float]] = []
@@ -212,20 +215,40 @@ class MLXBackend:
                 sampler=sampler,
             )
         ):
-            dist_list: list[float] = logprob_dist.tolist()  # type: ignore[assignment]
-            distributions.append(dist_list)
-            # MLX gives full vocab logprobs, indices are token IDs.
-            distribution_metadata.append({"is_aligned": 1})
-
             if step_idx >= prompt.max_tokens:
                 break
+
+            # logprob_dist is an mlx array of full-vocab logprobs.
+            # We only keep top-K to save memory.
+            if top_k > 0:
+                # mx.argpartition is not always available or might be slow for small K.
+                # Since we need to move to CPU anyway for serialization, we can do it there.
+                # But to avoid huge tolist(), we can use mx.topk if available or just move a bit.
+
+                # Get top-K indices and values
+                top_k_indices = mx.argpartition(-logprob_dist, top_k - 1)[:top_k]
+                top_k_values = logprob_dist[top_k_indices]
+
+                # Sort them for consistency
+                sort_idx = mx.argsort(-top_k_values)
+                top_k_indices = top_k_indices[sort_idx]
+                top_k_values = top_k_values[sort_idx]
+
+                dist_list = cast(list[float], top_k_values.tolist())
+                dist_indices = cast(list[int], top_k_indices.tolist())
+
+                distributions.append(dist_list)
+                meta = {"is_aligned": 1}
+                for i, idx in enumerate(dist_indices):
+                    meta[f"id_{i}"] = int(idx)
+                distribution_metadata.append(meta)
 
             token_id = int(token.item())
             token_str = self._tokenizer.decode([token_id])
             tokens.append(token_str)
 
-            # The logprob of the chosen token
-            logprobs.append(float(dist_list[token_id]))
+            # The logprob of the chosen token (from the full distribution)
+            logprobs.append(float(logprob_dist[token_id]))
 
         elapsed_s = time.perf_counter() - start
         text = "".join(tokens)
