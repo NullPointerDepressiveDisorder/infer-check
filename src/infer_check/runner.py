@@ -418,17 +418,17 @@ class TestRunner:
                 comparisons.append(comp)
 
         # ── Aggregate metrics ────────────────────────────────────────
-        n = len(comparisons) or 1  # avoid ZeroDivisionError
+        n = len(comparisons)
 
         # Flip rate via answer extraction (not severity proxy).
         flip_count = sum(1 for c in comparisons if c.metadata.get("flipped", False))
-        flip_rate = flip_count / n
+        flip_rate = flip_count / n if n > 0 else 0.0
 
         # KL divergence (only if both sides have logprobs).
         kl_values = [c.kl_divergence for c in comparisons if c.kl_divergence is not None]
         mean_kl: float | None = sum(kl_values) / len(kl_values) if kl_values else None
 
-        mean_sim = sum(c.text_similarity for c in comparisons) / n
+        mean_sim: float | None = sum(c.text_similarity for c in comparisons) / n if n > 0 else None
 
         # Per-category stats.
         cat_groups: dict[str, list[ComparisonResult]] = defaultdict(list)

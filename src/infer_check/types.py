@@ -118,7 +118,7 @@ class CompareResult(BaseInferModel):
     comparisons: list[ComparisonResult]
     flip_rate: float  # fraction of prompts where the "answer" changed
     mean_kl_divergence: float | None = None
-    mean_text_similarity: float
+    mean_text_similarity: float | None = None
     per_category_stats: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=_now)
     metadata: dict[str, Any] = Field(default_factory=dict)

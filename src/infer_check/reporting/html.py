@@ -842,7 +842,9 @@ def _build_compare_context(compare_results: list[CompareResult]) -> list[dict[st
                 "backend_b": c.backend_b,
                 "flip_rate": c.flip_rate,
                 "flip_rate_pct": f"{c.flip_rate * 100:.1f}",
-                "mean_similarity_pct": f"{c.mean_text_similarity * 100:.1f}",
+                "mean_similarity_pct": f"{c.mean_text_similarity * 100:.1f}"
+                if c.mean_text_similarity is not None
+                else "N/A",
                 "mean_kl": f"{c.mean_kl_divergence:.4f}" if c.mean_kl_divergence is not None else "N/A",
                 "count": len(c.comparisons),
                 "timestamp": c.timestamp.strftime("%Y-%m-%d %H:%M"),

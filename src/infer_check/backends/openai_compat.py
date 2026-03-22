@@ -206,7 +206,7 @@ class OpenAICompatBackend:
                             fv = 0.0
                         cleaned_items.append((tok, fv))
                     distributions.append([fv for _, fv in cleaned_items])
-                    meta = {}
+                    meta: dict[str, int | str] = {}
                     for i, (tok, _) in enumerate(cleaned_items):
                         meta[f"id_{i}"] = tok
                     distribution_metadata.append(meta)
