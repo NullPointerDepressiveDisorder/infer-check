@@ -8,9 +8,12 @@ same prompt — not merely different wording.
 Extraction strategies are selected by prompt category:
 
   - **numeric** (arithmetic, precision, large_numbers, floating_point,
-    underflow, formatting): extract the last number/expression.
+    underflow, formatting, word_problem, multi_digit_arithmetic,
+    precision_numerics, large_number_reasoning, algebraic_reasoning,
+    logical_puzzle): extract the last number/expression.
   - **boolean** (logic, edge_case): extract yes / no / true / false.
-  - **code** (python, debugging, completion): extract fenced code blocks
+  - **code** (python, debugging, completion, precise_syntax,
+    code_translation): extract fenced code blocks
     and compare after whitespace normalisation.
   - **json** (json): parse and compare structurally.
   - **fallback**: character-level similarity via ``difflib``.
@@ -43,6 +46,11 @@ _NUMERIC_CATEGORIES = frozenset(
         "underflow",
         "formatting",
         "word_problem",
+        "multi_digit_arithmetic",
+        "precision_numerics",
+        "large_number_reasoning",
+        "algebraic_reasoning",
+        "logical_puzzle",
     }
 )
 
@@ -58,6 +66,8 @@ _CODE_CATEGORIES = frozenset(
         "python",
         "debugging",
         "completion",
+        "precise_syntax",
+        "code_translation",
     }
 )
 
@@ -129,9 +139,7 @@ def _extract_boolean(text: str) -> ExtractedAnswer:
     the *last* one wins (models often hedge before concluding).
     Negation context is checked: "not correct" → no, "not true" → no.
     """
-    matches: list[tuple[int, str]] = [
-        (m.start(), m.group(0).lower()) for m in _BOOLEAN_RE.finditer(text)
-    ]
+    matches: list[tuple[int, str]] = [(m.start(), m.group(0).lower()) for m in _BOOLEAN_RE.finditer(text)]
     if not matches:
         return ExtractedAnswer(
             strategy="boolean",

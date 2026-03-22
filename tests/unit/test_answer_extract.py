@@ -264,3 +264,20 @@ class TestRawFallback:
     def test_general_category_uses_raw(self) -> None:
         ans = extract_answer("Hello world", "general")
         assert ans.strategy == "raw"
+
+    def test_new_categories_mapped_correctly(self) -> None:
+        # New categories from quant-sensitive.jsonl and their expected strategies
+        category_mapping = {
+            "multi_digit_arithmetic": "numeric",
+            "precision_numerics": "numeric",
+            "large_number_reasoning": "numeric",
+            "logical_puzzle": "numeric",
+            "algebraic_reasoning": "numeric",
+            "precise_syntax": "code",
+            "code_translation": "code",
+            "long_chain_of_thought": "raw",
+        }
+
+        for cat, expected_strategy in category_mapping.items():
+            ans = extract_answer("The answer is 42.", category=cat)
+            assert ans.strategy == expected_strategy, f"Category {cat} should use {expected_strategy} strategy"
