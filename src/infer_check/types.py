@@ -60,6 +60,7 @@ class InferenceResult(BaseInferModel):
     tokens: list[str]
     logprobs: list[float] | None = None
     distributions: list[list[float]] | None = None
+    distribution_metadata: list[dict[str, int]] | None = None
     text: str
     latency_ms: float
     tokens_per_second: float | None = None

@@ -74,11 +74,13 @@ class LlamaCppBackend:
         tokens: list[str] = []
         logprobs: list[float] | None = None
         distributions: list[list[float]] | None = None
+        distribution_metadata: list[dict[str, int]] | None = None
 
         completion_probs = data.get("completion_probabilities")
         if completion_probs:
             logprobs = []
             distributions = []
+            distribution_metadata = []
             for entry in completion_probs:
                 tok_str = entry.get("content", "")
                 tokens.append(tok_str)
@@ -93,6 +95,13 @@ class LlamaCppBackend:
                     # llama-server provides probs for top N.
                     logprobs.append(float(probs[0].get("prob", 0.0)))
                     distributions.append([float(p.get("prob", 0.0)) for p in probs])
+
+                    # Store token IDs to allow alignment if needed.
+                    dist_meta = {}
+                    for i, p in enumerate(probs):
+                        if "id" in p:
+                            dist_meta[f"id_{i}"] = int(p["id"])
+                    distribution_metadata.append(dist_meta)
         else:
             tokens = content.split()
 
@@ -109,6 +118,7 @@ class LlamaCppBackend:
             tokens=tokens,
             logprobs=logprobs,
             distributions=distributions,
+            distribution_metadata=distribution_metadata,
             text=content,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

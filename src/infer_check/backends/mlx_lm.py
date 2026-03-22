@@ -201,6 +201,7 @@ class MLXBackend:
         tokens: list[str] = []
         logprobs: list[float] = []
         distributions: list[list[float]] = []
+        distribution_metadata: list[dict[str, int]] = []
 
         start = time.perf_counter()
 
@@ -213,6 +214,8 @@ class MLXBackend:
         ):
             dist_list: list[float] = logprob_dist.tolist()  # type: ignore[assignment]
             distributions.append(dist_list)
+            # MLX gives full vocab logprobs, indices are token IDs.
+            distribution_metadata.append({"is_aligned": 1})
 
             if step_idx >= prompt.max_tokens:
                 break
@@ -239,6 +242,7 @@ class MLXBackend:
             tokens=tokens,
             logprobs=logprobs if logprobs else None,
             distributions=distributions if distributions else None,
+            distribution_metadata=distribution_metadata if distribution_metadata else None,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

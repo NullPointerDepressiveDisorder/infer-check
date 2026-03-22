@@ -88,15 +88,8 @@ class TestRunner:
             kl_per_token = []
 
             for i in range(min_len):
-                p = np.array(baseline.distributions[i])
-                q = np.array(test.distributions[i])
-
-                # Ensure we are dealing with probabilities
-                # If they are logprobs (like from MLX), convert to probs
-                # Actually, MLX gives logprobs. Llama.cpp gives probs.
-                # Let's check if we can detect.
-                # If sum of exp(logprobs) is close to 1, they are logprobs.
-                # If sum is close to 1, they are probs.
+                b_dist = np.array(baseline.distributions[i])
+                t_dist = np.array(test.distributions[i])
 
                 def to_probs(dist: Any) -> Any:
                     import numpy as np
@@ -109,25 +102,63 @@ class TestRunner:
                     else:  # Likely probs
                         return dist / np.sum(dist)
 
-                p_prob = to_probs(p)
-                q_prob = to_probs(q)
+                # Check if distributions are aligned by token IDs
+                b_meta = (
+                    baseline.distribution_metadata[i]
+                    if baseline.distribution_metadata and i < len(baseline.distribution_metadata)
+                    else None
+                )
+                t_meta = (
+                    test.distribution_metadata[i]
+                    if test.distribution_metadata and i < len(test.distribution_metadata)
+                    else None
+                )
 
-                # Handle different distribution lengths (e.g. MLX full vocab vs Llama.cpp top 10)
-                # This is tricky. If they are different lengths, we can't easily compute KL.
-                # However, quants of the same model SHOULD have same vocab size.
-                if len(p_prob) == len(q_prob):
-                    # Standard KL divergence: sum(p * log(p/q))
-                    # Using small epsilon to avoid log(0)
-                    eps = 1e-10
-                    p_prob = np.clip(p_prob, eps, 1.0)
-                    q_prob = np.clip(q_prob, eps, 1.0)
-                    kl = np.sum(p_prob * np.log(p_prob / q_prob))
-                    kl_per_token.append(float(kl))
+                # MLX: is_aligned=1 (full vocab, indices are IDs)
+                if (
+                    b_meta
+                    and t_meta
+                    and b_meta.get("is_aligned")
+                    and t_meta.get("is_aligned")
+                    and len(b_dist) == len(t_dist)
+                ):
+                    p_prob = to_probs(b_dist)
+                    q_prob = to_probs(t_dist)
+                # llama-server: id_0, id_1, ... (top-K)
+                elif b_meta and t_meta and "id_0" in b_meta and "id_0" in t_meta:
+                    # Align on union of token IDs
+                    b_ids = {int(v): i for k, v in b_meta.items() if k.startswith("id_")}
+                    t_ids = {int(v): i for k, v in t_meta.items() if k.startswith("id_")}
+                    all_ids = sorted(list(set(b_ids.keys()) | set(t_ids.keys())))
+
+                    p_raw = np.zeros(len(all_ids))
+                    q_raw = np.zeros(len(all_ids))
+
+                    # If the source is logprobs, we should ideally use -inf as neutral.
+                    # But llama.cpp gives probs. MLX gives logprobs.
+                    # Let's convert to probs FIRST then align.
+                    b_prob_orig = to_probs(b_dist)
+                    t_prob_orig = to_probs(t_dist)
+
+                    for idx, tid in enumerate(all_ids):
+                        if tid in b_ids:
+                            p_raw[idx] = b_prob_orig[b_ids[tid]]
+                        if tid in t_ids:
+                            q_raw[idx] = t_prob_orig[t_ids[tid]]
+
+                    p_prob = p_raw / (np.sum(p_raw) + 1e-12)
+                    q_prob = q_raw / (np.sum(q_raw) + 1e-12)
                 else:
-                    # If distributions are different sizes, we might be comparing
-                    # top-K from one model to full vocab of another.
-                    # This is not directly comparable.
-                    pass
+                    # Not aligned or missing IDs - skip KL to avoid meaningless values
+                    continue
+
+                # Standard KL divergence: sum(p * log(p/q))
+                # Using small epsilon to avoid log(0)
+                eps = 1e-10
+                p_prob = np.clip(p_prob, eps, 1.0)
+                q_prob = np.clip(q_prob, eps, 1.0)
+                kl = np.sum(p_prob * np.log(p_prob / q_prob))
+                kl_per_token.append(float(kl))
 
             if kl_per_token:
                 kl_div = float(np.mean(kl_per_token))
