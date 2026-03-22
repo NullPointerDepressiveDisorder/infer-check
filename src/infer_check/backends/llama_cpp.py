@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 
 import httpx
@@ -84,17 +85,20 @@ class LlamaCppBackend:
             for entry in completion_probs:
                 tok_str = entry.get("content", "")
                 tokens.append(tok_str)
-                # Top prob entry (index 0) contains the chosen token logprob.
+                # Top prob entry (index 0) contains the chosen token linear prob.
                 probs = entry.get("probs", [])
                 if probs:
-                    # llama-server returns probabilities, not log-probabilities
-                    # in 'probs' list, but it's better than nothing.
-                    # Actually, KL divergence can be calculated from probs.
-                    # However, we need a consistent format.
-                    # MLX provides logprobs for the whole vocab.
-                    # llama-server provides probs for top N.
-                    logprobs.append(float(probs[0].get("prob", 0.0)))
-                    distributions.append([float(p.get("prob", 0.0)) for p in probs])
+                    # llama-server returns linear probabilities (0..1).
+                    # We convert to log-probabilities (log-space) to match the rest of the codebase.
+                    # Epsilon 1e-10 matches kl_divergence epsilon in the analyzer.
+                    epsilon = 1e-10
+                    logprobs.append(math.log(max(float(probs[0].get("prob", 0.0)), epsilon)))
+
+                    dist_logprobs = []
+                    for p in probs:
+                        p_val = max(float(p.get("prob", 0.0)), epsilon)
+                        dist_logprobs.append(math.log(p_val))
+                    distributions.append(dist_logprobs)
 
                     # Store token IDs to allow alignment if needed.
                     dist_meta = {}
