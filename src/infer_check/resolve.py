@@ -1,4 +1,4 @@
-"""Model resolution for the compare command.
+"""Model resolution for multiple commands (compare, sweep, stress, determinism).
 
 Takes a model spec string and resolves it to a backend type + model path.
 Supports HuggingFace repo IDs, local paths, and Ollama-style tags.
@@ -9,7 +9,7 @@ Resolution rules (in order):
   3. Explicit prefix  — ``gguf:/path/to/model.gguf`` → llama-cpp
   4. Local .gguf file — path exists and ends with ``.gguf`` → llama-cpp
   5. HF repo with ``-mlx`` or ``mlx-community/`` → mlx-lm
-  6. HF repo with ``-GGUF`` or ``-gguf`` → llama-cpp (via Ollama)
+  6. HF repo with ``-GGUF`` or ``-gguf`` → llama-cpp (default: http://localhost:8080)
   7. Fallback — assume mlx-lm (most common local Mac use case)
 """
 

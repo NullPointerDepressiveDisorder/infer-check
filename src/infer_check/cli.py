@@ -83,7 +83,7 @@ def sweep(
           --models "bf16=mlx-community/Llama-3.1-8B-Instruct-bf16,
                     4bit=mlx-community/Llama-3.1-8B-Instruct-4bit,
                     3bit=mlx-community/Llama-3.1-8B-Instruct-3bit" \\
-          --prompts ./prompt-suites/reasoning.jsonl
+          --prompts reasoning
     """
     from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
@@ -439,7 +439,7 @@ def compare(
         report_path = output / f"report_{safe_a}_vs_{safe_b}.html"
         generate_report(output, report_path)
         console.print(f"[green]HTML report generated at {report_path}[/green]")
-    elif n > 0:
+    elif n > 0 and not flipped:
         console.print("[bold green]No answer flips detected.[/bold green]")
 
 

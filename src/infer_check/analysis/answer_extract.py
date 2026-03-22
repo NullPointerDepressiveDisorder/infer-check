@@ -316,7 +316,8 @@ def answers_match(
     """
     # If either extraction failed, fall back to raw similarity.
     if not a.value or not b.value:
-        return not a.value and not b.value
+        ratio = difflib.SequenceMatcher(None, a.value or "", b.value or "").ratio()
+        return ratio >= similarity_threshold
 
     strategy = a.strategy  # both should share strategy if same prompt
 
