@@ -181,7 +181,7 @@ class OpenAICompatBackend:
         if lp_data and lp_data.get("tokens"):
             tokens = lp_data["tokens"]
             raw_logprobs = lp_data.get("token_logprobs", [])
-            logprobs_list = [float(v) if v is not None and not math.isnan(v) else 0.0 for v in raw_logprobs]
+            logprobs_list = [float(v) if v is not None and not math.isnan(v) else -9999.0 for v in raw_logprobs]
 
             top_logprobs = lp_data.get("top_logprobs")
             if top_logprobs:
@@ -197,13 +197,13 @@ class OpenAICompatBackend:
                     sorted_items = sorted(entry.items())
                     cleaned_items: list[tuple[str, float]] = []
                     for tok, v in sorted_items:
-                        # Mirror token_logprobs sanitization: treat None/NaN/invalid as 0.0
+                        # Mirror token_logprobs sanitization: treat None/NaN/invalid as -9999.0
                         try:
                             fv = float(v) if v is not None else float("nan")
                         except (TypeError, ValueError):
                             fv = float("nan")
                         if math.isnan(fv):
-                            fv = 0.0
+                            fv = -9999.0
                         cleaned_items.append((tok, fv))
                     distributions.append([fv for _, fv in cleaned_items])
                     meta: dict[str, int | str] = {}
