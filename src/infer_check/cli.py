@@ -429,9 +429,18 @@ def compare(
             if len(str(ans_b)) > 27:
                 ans_b = str(ans_b)[:27] + "..."
 
+            cat = (
+                c.metadata.get("prompt_category")
+                or c.metadata.get("category")
+                or c.baseline.metadata.get("prompt_category")
+                or c.baseline.metadata.get("category")
+                or c.test.metadata.get("prompt_category")
+                or c.test.metadata.get("category")
+                or "?"
+            )
             flip_table.add_row(
                 prompt_text,
-                c.metadata.get("category", "?"),
+                cat,
                 c.metadata.get("extraction_strategy", "?"),
                 f"[green]{ans_a}[/green]",
                 f"[red]{ans_b}[/red]",

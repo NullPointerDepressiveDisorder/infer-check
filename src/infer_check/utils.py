@@ -12,7 +12,8 @@ def sanitize_filename(label: str) -> str:
     - Replaces other filesystem-unsafe characters (< > : " | ? *)
     - Replaces control characters (\\x00-\\x1f)
     - Collapses multiple underscores into one
-    - Strips leading and trailing underscores
+    - Strips leading and trailing dots, underscores and whitespace
+    - Appends an underscore to Windows reserved names (CON, PRN, etc.)
     """
     # Replace path separators and parent directory references
     safe = label.replace("/", "_").replace("\\", "_")
@@ -25,8 +26,15 @@ def sanitize_filename(label: str) -> str:
     # Collapse multiple underscores into one
     safe = re.sub(r"_+", "_", safe)
 
-    # Strip leading/trailing underscores and whitespace
-    safe = safe.strip("_").strip()
+    # Strip leading/trailing underscores, dots, and whitespace
+    # Windows doesn't allow trailing dots or spaces
+    safe = safe.strip("._ ")
+
+    # Handle Windows reserved device names
+    # CON, PRN, AUX, NUL, COM1-9, LPT1-9
+    reserved_pattern = r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$"
+    if re.match(reserved_pattern, safe, re.IGNORECASE):
+        safe += "_"
 
     # Ensure we have something left
     return safe if safe else "model"

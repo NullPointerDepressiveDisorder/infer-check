@@ -50,6 +50,17 @@ class TestRunner:
           - moderate:   similarity >= 0.5
           - severe:     similarity < 0.5
         """
+        import numpy as np
+
+        def to_probs(dist: Any) -> Any:
+            if np.any(dist < 0):  # Likely logprobs
+                # Numerical stability: shift logprobs
+                dist = dist - np.max(dist)
+                probs = np.exp(dist)
+                return probs / np.sum(probs)
+            else:  # Likely probs
+                return dist / np.sum(dist)
+
         if baseline.text == test.text:
             text_similarity = 1.0
         else:
@@ -80,8 +91,6 @@ class TestRunner:
         # KL Divergence computation
         kl_div = None
         if baseline.distributions and test.distributions:
-            import numpy as np
-
             # Truncate to the shorter sequence
             min_len = min(len(baseline.distributions), len(test.distributions))
             kl_per_token = []
@@ -89,17 +98,6 @@ class TestRunner:
             for i in range(min_len):
                 b_dist = np.array(baseline.distributions[i])
                 t_dist = np.array(test.distributions[i])
-
-                def to_probs(dist: Any) -> Any:
-                    import numpy as np
-
-                    if np.any(dist < 0):  # Likely logprobs
-                        # Numerical stability: shift logprobs
-                        dist = dist - np.max(dist)
-                        probs = np.exp(dist)
-                        return probs / np.sum(probs)
-                    else:  # Likely probs
-                        return dist / np.sum(dist)
 
                 # Check if distributions are aligned by token IDs
                 b_meta = (
@@ -186,6 +184,7 @@ class TestRunner:
                 "severity": severity,
                 "prompt_text": baseline.metadata.get("prompt_text"),
                 "prompt_category": baseline.metadata.get("prompt_category"),
+                "category": baseline.metadata.get("prompt_category") or baseline.metadata.get("category"),
             },
         )
 
