@@ -226,6 +226,8 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await baseline_backend.generate(prompt)
+                    res.metadata["prompt_text"] = prompt.text
+                    res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
                     from rich.console import Console
 
@@ -247,6 +249,8 @@ class TestRunner:
                     continue
                 try:
                     res2 = await baseline_backend.generate(prompt)
+                    res2.metadata["prompt_text"] = prompt.text
+                    res2.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
                     from rich.console import Console
 
@@ -275,6 +279,8 @@ class TestRunner:
                 for prompt in prompts:
                     try:
                         res = await backend.generate(prompt)
+                        res.metadata["prompt_text"] = prompt.text
+                        res.metadata["prompt_category"] = prompt.category
                     except Exception as exc:
                         from rich.console import Console
 
@@ -362,6 +368,8 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await backend_a.generate(prompt)
+                    res.metadata["prompt_text"] = prompt.text
+                    res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
                     from rich.console import Console
 
@@ -378,6 +386,8 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await backend_b.generate(prompt)
+                    res.metadata["prompt_text"] = prompt.text
+                    res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
                     from rich.console import Console
 
@@ -493,6 +503,8 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await baseline_backend.generate(prompt)
+                    res.metadata["prompt_text"] = prompt.text
+                    res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
                     from rich.console import Console
 
@@ -508,6 +520,8 @@ class TestRunner:
                 for prompt in prompts:
                     try:
                         test_res = await test_backend.generate(prompt)
+                        test_res.metadata["prompt_text"] = prompt.text
+                        test_res.metadata["prompt_category"] = prompt.category
                     except Exception as exc:
                         from rich.console import Console
 
@@ -546,7 +560,10 @@ class TestRunner:
                 async def _run(p: Prompt, _sem: asyncio.Semaphore = sem) -> InferenceResult | Exception:
                     async with _sem:
                         try:
-                            return await backend.generate(p)
+                            res = await backend.generate(p)
+                            res.metadata["prompt_text"] = p.text
+                            res.metadata["prompt_category"] = p.category
+                            return res
                         except Exception as e:
                             return e
 
@@ -618,6 +635,8 @@ class TestRunner:
                 for _ in range(num_runs):
                     try:
                         res = await backend.generate(prompt)
+                        res.metadata["prompt_text"] = prompt.text
+                        res.metadata["prompt_category"] = prompt.category
                     except Exception as exc:
                         from rich.console import Console
 

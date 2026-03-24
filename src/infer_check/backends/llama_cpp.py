@@ -65,9 +65,7 @@ class LlamaCppBackend:
         try:
             data = response.json()
         except Exception as exc:
-            raise RuntimeError(
-                f"llama-server returned non-JSON response: {response.text[:200]}"
-            ) from exc
+            raise RuntimeError(f"llama-server returned non-JSON response: {response.text[:200]}") from exc
 
         content: str = data.get("content", "")
 

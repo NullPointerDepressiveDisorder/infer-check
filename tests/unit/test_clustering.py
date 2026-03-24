@@ -9,9 +9,7 @@ def test_cluster_failures_by_category() -> None:
     }
 
     comp1 = ComparisonResult(
-        baseline=InferenceResult(
-            prompt_id="p1", backend_name="base", model_id="m", tokens=[], text="", latency_ms=1.0
-        ),
+        baseline=InferenceResult(prompt_id="p1", backend_name="base", model_id="m", tokens=[], text="", latency_ms=1.0),
         test=InferenceResult(
             prompt_id="p1",
             backend_name="test",
@@ -30,12 +28,8 @@ def test_cluster_failures_by_category() -> None:
 
     # Simulate a successful prompt to ensure it is ignored
     comp2_success = ComparisonResult(
-        baseline=InferenceResult(
-            prompt_id="p2", backend_name="base", model_id="m", tokens=[], text="", latency_ms=1.0
-        ),
-        test=InferenceResult(
-            prompt_id="p2", backend_name="test", model_id="m", tokens=[], text="", latency_ms=1.0
-        ),
+        baseline=InferenceResult(prompt_id="p2", backend_name="base", model_id="m", tokens=[], text="", latency_ms=1.0),
+        test=InferenceResult(prompt_id="p2", backend_name="test", model_id="m", tokens=[], text="", latency_ms=1.0),
         text_similarity=1.0,
         is_failure=False,
         failure_reason=None,
@@ -59,9 +53,7 @@ def test_cluster_failures_by_length() -> None:
         "long_p": Prompt(id="long_p", text=long_text, category="c", max_tokens=10),
     }
 
-    base_res = InferenceResult(
-        prompt_id="short_p", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[]
-    )
+    base_res = InferenceResult(prompt_id="short_p", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[])
     test_res = InferenceResult(
         prompt_id="short_p", backend_name="t", model_id="m", text="diff", latency_ms=1, tokens=[]
     )
@@ -96,12 +88,8 @@ def test_cluster_failures_by_length() -> None:
 
 def test_cluster_failures_by_onset() -> None:
     prompts = {"p1": Prompt(id="p1", text="x", category="c", max_tokens=10)}
-    base_res = InferenceResult(
-        prompt_id="p1", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[]
-    )
-    test_res = InferenceResult(
-        prompt_id="p1", backend_name="t", model_id="m", text="diff", latency_ms=1, tokens=[]
-    )
+    base_res = InferenceResult(prompt_id="p1", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[])
+    test_res = InferenceResult(prompt_id="p1", backend_name="t", model_id="m", text="diff", latency_ms=1, tokens=[])
 
     # Early onset (diverged at index 5)
     comp1 = ComparisonResult(
@@ -134,12 +122,8 @@ def test_summarize_clusters() -> None:
         "p3": Prompt(id="p3", text="m", category="math", max_tokens=10),
     }
 
-    base_res = InferenceResult(
-        prompt_id="p1", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[]
-    )
-    test_res = InferenceResult(
-        prompt_id="p1", backend_name="t", model_id="m", text="diff", latency_ms=1, tokens=[]
-    )
+    base_res = InferenceResult(prompt_id="p1", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[])
+    test_res = InferenceResult(prompt_id="p1", backend_name="t", model_id="m", text="diff", latency_ms=1, tokens=[])
     c1 = ComparisonResult(
         baseline=base_res,
         test=test_res,
@@ -149,12 +133,8 @@ def test_summarize_clusters() -> None:
         metadata={},
     )
 
-    base_res2 = InferenceResult(
-        prompt_id="p2", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[]
-    )
-    test_res2 = InferenceResult(
-        prompt_id="p2", backend_name="t", model_id="m", text="diff", latency_ms=1, tokens=[]
-    )
+    base_res2 = InferenceResult(prompt_id="p2", backend_name="b", model_id="m", text="", latency_ms=1, tokens=[])
+    test_res2 = InferenceResult(prompt_id="p2", backend_name="t", model_id="m", text="diff", latency_ms=1, tokens=[])
     c2 = ComparisonResult(
         baseline=base_res2,
         test=test_res2,

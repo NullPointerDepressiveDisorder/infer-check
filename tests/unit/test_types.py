@@ -35,17 +35,11 @@ def test_inference_result() -> None:
 
 
 def test_comparison_result_is_failure() -> None:
-    baseline = InferenceResult(
-        prompt_id="test", backend_name="a", model_id="m", tokens=[], text="", latency_ms=10.0
-    )
-    test_run = InferenceResult(
-        prompt_id="test", backend_name="b", model_id="m", tokens=[], text="", latency_ms=10.0
-    )
+    baseline = InferenceResult(prompt_id="test", backend_name="a", model_id="m", tokens=[], text="", latency_ms=10.0)
+    test_run = InferenceResult(prompt_id="test", backend_name="b", model_id="m", tokens=[], text="", latency_ms=10.0)
 
     # Identical
-    res1 = ComparisonResult(
-        baseline=baseline, test=test_run, kl_divergence=0.0, text_similarity=1.0, is_failure=False
-    )
+    res1 = ComparisonResult(baseline=baseline, test=test_run, kl_divergence=0.0, text_similarity=1.0, is_failure=False)
     assert not res1.is_failure
 
     # Diverged

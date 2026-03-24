@@ -224,6 +224,10 @@ class TestCompareRunner:
         assert result.mean_text_similarity == 1.0
         for c in result.comparisons:
             assert c.metadata["severity"] == "identical"
+            assert c.baseline.metadata["prompt_text"] is not None
+            assert c.baseline.metadata["prompt_category"] is not None
+            assert c.test.metadata["prompt_text"] is not None
+            assert c.test.metadata["prompt_category"] is not None
 
     def test_severe_divergence_flip_rate(self, test_runner: TestRunner) -> None:
         """When outputs differ severely, flip_rate reflects it."""
@@ -253,6 +257,7 @@ class TestCompareRunner:
         assert len(result.comparisons) == 4
         # 2 out of 4 should be severe
         assert result.flip_rate == pytest.approx(0.5)
+        assert result.mean_text_similarity is not None
         assert result.mean_text_similarity < 1.0
 
     def test_per_category_stats(self, test_runner: TestRunner) -> None:

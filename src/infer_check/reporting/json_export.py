@@ -204,17 +204,10 @@ def export(results_dir: Path, output_path: Path) -> Path:
             "determinism_count": len(sections["determinism"]),
             "total_files_scanned": len(json_files),
         },
-        "sweep": [
-            s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in sections["sweep"]
-        ],
+        "sweep": [s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in sections["sweep"]],
         "diff": [[c.model_dump(mode="json") for c in batch] for batch in sections["diff"]],
-        "stress": [
-            s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in sections["stress"]
-        ],
-        "determinism": [
-            d.model_dump(mode="json") if hasattr(d, "model_dump") else d
-            for d in sections["determinism"]
-        ],
+        "stress": [s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in sections["stress"]],
+        "determinism": [d.model_dump(mode="json") if hasattr(d, "model_dump") else d for d in sections["determinism"]],
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

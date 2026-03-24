@@ -17,9 +17,7 @@ __all__ = [
     "format_issues_batch",
 ]
 
-_REPRO_CMD = (
-    "infer-check diff --model {model_id} --backends {baseline},{test} --prompts <prompt_file>"
-)
+_REPRO_CMD = "infer-check diff --model {model_id} --backends {baseline},{test} --prompts <prompt_file>"
 
 
 def format_issue(comparison: ComparisonResult, include_repro: bool = True) -> str:
@@ -61,11 +59,7 @@ def format_issue(comparison: ComparisonResult, include_repro: bool = True) -> st
 
     similarity_pct = f"{comparison.text_similarity * 100:.1f}"
     kl_str = f"{comparison.kl_divergence:.4f}" if comparison.kl_divergence is not None else "N/A"
-    div_idx = (
-        str(comparison.token_divergence_index)
-        if comparison.token_divergence_index is not None
-        else "N/A"
-    )
+    div_idx = str(comparison.token_divergence_index) if comparison.token_divergence_index is not None else "N/A"
 
     platform_info = f"{platform.system()} {platform.machine()} (Python {platform.python_version()})"
 
@@ -80,23 +74,14 @@ def format_issue(comparison: ComparisonResult, include_repro: bool = True) -> st
         idx = comparison.token_divergence_index
         if idx < len(baseline.tokens):
             b_tok = baseline.tokens[idx]
-            b_lp = (
-                f"{baseline.logprobs[idx]:.3f}"
-                if baseline.logprobs and idx < len(baseline.logprobs)
-                else "N/A"
-            )
+            b_lp = f"{baseline.logprobs[idx]:.3f}" if baseline.logprobs and idx < len(baseline.logprobs) else "N/A"
             baseline_token_line = f"  Baseline token: `{b_tok}` (logprob: {b_lp})\n"
         if idx < len(test.tokens):
             t_tok = test.tokens[idx]
-            t_lp = (
-                f"{test.logprobs[idx]:.3f}" if test.logprobs and idx < len(test.logprobs) else "N/A"
-            )
+            t_lp = f"{test.logprobs[idx]:.3f}" if test.logprobs and idx < len(test.logprobs) else "N/A"
             test_token_line = f"  Actual token: `{t_tok}` (logprob: {t_lp})\n"
 
-    title_line = (
-        f"## [Bug] {test.backend_name} produces divergent output "
-        f"at {quant} for {category} prompts\n"
-    )
+    title_line = f"## [Bug] {test.backend_name} produces divergent output at {quant} for {category} prompts\n"
 
     env_section = f"""**Environment**
 - Backend: {test.backend_name}
@@ -123,9 +108,7 @@ Text similarity: {similarity_pct}%, KL divergence: {kl_str}
 """
 
     if comparison.token_divergence_index is not None:
-        desc_section += (
-            f"\n**First divergence at token {div_idx}**\n" + baseline_token_line + test_token_line
-        )
+        desc_section += f"\n**First divergence at token {div_idx}**\n" + baseline_token_line + test_token_line
 
     if comparison.failure_reason:
         desc_section += f"\nFailure reason: {comparison.failure_reason}\n"

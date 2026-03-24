@@ -22,9 +22,7 @@ def test_cli_help(runner: CliRunner) -> None:
 def test_sweep_fewer_than_2_models(runner: CliRunner, tmp_path: Path) -> None:
     dummy_suite = tmp_path / "dummy.jsonl"
     dummy_suite.touch()
-    result = runner.invoke(
-        main, ["sweep", "--models", "just-one-model", "--prompts", str(dummy_suite)]
-    )
+    result = runner.invoke(main, ["sweep", "--models", "just-one-model", "--prompts", str(dummy_suite)])
     assert result.exit_code != 0
     assert "Need at least 2 models" in result.output
 
