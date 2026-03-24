@@ -16,6 +16,7 @@ from typing import Any
 from jinja2 import Environment, Undefined
 
 from infer_check.types import (
+    CompareResult,
     ComparisonResult,
     DeterminismResult,
     StressResult,
@@ -318,6 +319,7 @@ _HTML_TEMPLATE = """\
   <nav>
     <a href="#summary">Summary</a>
     {% if sweep_rows %}<a href="#sweep">Sweep</a>{% endif %}
+    {% if compare_runs %}<a href="#compare">Compare</a>{% endif %}
     {% if diff_rows %}<a href="#diff">Diff</a>{% endif %}
     {% if failures %}<a href="#cards">Failures</a>{% endif %}
     {% if stress_rows %}<a href="#stress">Stress</a>{% endif %}
@@ -399,6 +401,67 @@ _HTML_TEMPLATE = """\
         the previous level.</span>
     </div>
     {% endif %}
+  </section>
+  {% endif %}
+
+  <!-- ── SECTION: Model Comparison ── -->
+  {% if compare_runs %}
+  <section id="compare">
+    <h2>Model Comparison Runs</h2>
+    {% for run in compare_runs %}
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.5rem; margin-bottom:1.5rem;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.25rem; border-bottom:1px solid var(--border); padding-bottom:1rem;">
+        <div>
+          <h3 style="font-size:1rem; margin-bottom:0.25rem;">{{ run.model_a }} <span style="color:var(--text-dim); font-weight:400;">vs</span> {{ run.model_b }}</h3>
+          <p style="font-size:0.8rem; color:var(--text-dim);">{{ run.backend_a }} &middot; {{ run.backend_b }} &middot; {{ run.timestamp }}</p>
+        </div>
+        <div style="text-align:right;">
+          <div class="chip {{ 'chip-fail' if run.flip_rate > 0.1 else 'chip-ok' }}" style="font-size:0.9rem; padding:4px 12px;">
+            Flip Rate: {{ run.flip_rate_pct }}%
+          </div>
+        </div>
+      </div>
+
+      <div class="metrics-row" style="margin-bottom:1.5rem; gap:2rem;">
+        <div class="metric">
+          <span class="mlabel">Mean Similarity</span>
+          <span class="mval" style="font-size:1.25rem;">{{ run.mean_similarity_pct }}%</span>
+        </div>
+        <div class="metric">
+          <span class="mlabel">Mean KL Div</span>
+          <span class="mval" style="font-size:1.25rem;">{{ run.mean_kl }}</span>
+        </div>
+        <div class="metric">
+          <span class="mlabel">Total Comparisons</span>
+          <span class="mval" style="font-size:1.25rem;">{{ run.count }}</span>
+        </div>
+      </div>
+
+      {% if run.per_category %}
+      <h4 style="font-size:0.8rem; text-transform:uppercase; color:var(--text-dim); margin-bottom:0.75rem; letter-spacing:0.05em;">Per-Category Stats</h4>
+      <div class="table-wrap">
+        <table style="font-size:0.8rem;">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Flip Rate</th>
+              <th>Mean Similarity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cat, stats in run.per_category.items() %}
+            <tr>
+              <td><code>{{ cat }}</code></td>
+              <td>{{ (stats.flip_rate * 100) | round(1) }}%</td>
+              <td>{{ (stats.mean_similarity * 100) | round(1) }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
   </section>
   {% endif %}
 
@@ -662,12 +725,18 @@ def _load_results(results_dir: Path) -> dict[str, list[Any]]:
         "diff": [],
         "stress": [],
         "determinism": [],
+        "compare": [],
     }
 
     for path in sorted(results_dir.rglob("*.json")):
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            continue
+
+        compare = _try_load(raw, CompareResult)
+        if compare is not None:
+            sections["compare"].append(compare)
             continue
 
         sweep = _try_load(raw, SweepResult)
@@ -761,6 +830,30 @@ def _build_sweep_context(
     return {"sweep_rows": rows, "quant_cols": quant_cols, "degradation_cliff": cliff}
 
 
+def _build_compare_context(compare_results: list[CompareResult]) -> list[dict[str, Any]]:
+    """Build summary data for the model comparison section."""
+    runs = []
+    for c in compare_results:
+        runs.append(
+            {
+                "model_a": c.model_a,
+                "model_b": c.model_b,
+                "backend_a": c.backend_a,
+                "backend_b": c.backend_b,
+                "flip_rate": c.flip_rate,
+                "flip_rate_pct": f"{c.flip_rate * 100:.1f}",
+                "mean_similarity_pct": f"{c.mean_text_similarity * 100:.1f}"
+                if c.mean_text_similarity is not None
+                else "N/A",
+                "mean_kl": f"{c.mean_kl_divergence:.4f}" if c.mean_kl_divergence is not None else "N/A",
+                "count": len(c.comparisons),
+                "timestamp": c.timestamp.strftime("%Y-%m-%d %H:%M"),
+                "per_category": c.per_category_stats,
+            }
+        )
+    return runs
+
+
 def _build_diff_context(diff_batches: list[list[ComparisonResult]]) -> list[dict[str, Any]]:
     """Build rows for the cross-backend comparison table."""
     rows: list[dict[str, Any]] = []
@@ -797,20 +890,22 @@ def _build_failure_cards(
         for comp in batch:
             if not comp.is_failure:
                 continue
-            category = comp.test.metadata.get(
-                "category", comp.baseline.metadata.get("category", "general")
+            category = (
+                comp.metadata.get("prompt_category")
+                or comp.metadata.get("category")
+                or comp.test.metadata.get("prompt_category")
+                or comp.test.metadata.get("category")
+                or comp.baseline.metadata.get("prompt_category")
+                or comp.baseline.metadata.get("category")
+                or "general"
             )
-            prompt_text = comp.baseline.metadata.get("prompt_text", "")
+            prompt_text = comp.metadata.get("prompt_text") or comp.baseline.metadata.get("prompt_text", "")
             prompt_text = comp.baseline.text[:200] if not prompt_text else str(prompt_text)[:200]
             if len(prompt_text) == 200:
                 prompt_text += "…"
 
             kl_str = f"{comp.kl_divergence:.4f}" if comp.kl_divergence is not None else "N/A"
-            div_idx = (
-                str(comp.token_divergence_index)
-                if comp.token_divergence_index is not None
-                else "N/A"
-            )
+            div_idx = str(comp.token_divergence_index) if comp.token_divergence_index is not None else "N/A"
 
             github_issue_body = format_issue(comp, include_repro=True)
 
@@ -915,6 +1010,7 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
     diff_batches: list[list[ComparisonResult]] = sections["diff"]
     stress_results: list[StressResult] = sections["stress"]
     det_results: list[DeterminismResult] = sections["determinism"]
+    compare_results: list[CompareResult] = sections["compare"]
 
     # ── Executive Summary ──────────────────────────────────────────────────
     all_comparisons: list[ComparisonResult] = []
@@ -922,16 +1018,14 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
         all_comparisons.extend(sweep.comparisons)
     for batch in diff_batches:
         all_comparisons.extend(batch)
+    for compare in compare_results:
+        all_comparisons.extend(compare.comparisons)
 
     total_tests = len(all_comparisons)
     total_failures = sum(1 for c in all_comparisons if c.is_failure)
-    pass_rate = (
-        round((total_tests - total_failures) / total_tests * 100, 1) if total_tests else 100.0
-    )
+    pass_rate = round((total_tests - total_failures) / total_tests * 100, 1) if total_tests else 100.0
 
-    backend_names = {c.test.backend_name for c in all_comparisons} | {
-        c.baseline.backend_name for c in all_comparisons
-    }
+    backend_names = {c.test.backend_name for c in all_comparisons} | {c.baseline.backend_name for c in all_comparisons}
     backend_count = len(backend_names)
     quant_count = len({c.test.quantization for c in all_comparisons if c.test.quantization})
 
@@ -942,8 +1036,9 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
 
     # ── Section data ───────────────────────────────────────────────────────
     sweep_ctx = _build_sweep_context(sweeps)
-    diff_rows = _build_diff_context(diff_batches)
-    failure_cards = _build_failure_cards(diff_batches)
+    compare_runs = _build_compare_context(compare_results)
+    diff_rows = _build_diff_context(diff_batches + [c.comparisons for c in compare_results])
+    failure_cards = _build_failure_cards(diff_batches + [c.comparisons for c in compare_results])
     stress_rows = _build_stress_context(stress_results)
     determinism_rows = _build_determinism_context(det_results)
 
@@ -965,6 +1060,7 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
         sweep_rows=sweep_ctx["sweep_rows"],
         quant_cols=sweep_ctx["quant_cols"],
         degradation_cliff=sweep_ctx["degradation_cliff"],
+        compare_runs=compare_runs,
         diff_rows=diff_rows,
         failures=failure_cards,
         stress_rows=stress_rows,

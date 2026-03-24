@@ -34,6 +34,7 @@ repos:
           - click>=8.1.0
           - httpx>=0.27.0
           - types-jinja2
+          - mlx-lm<0.31.0
         args: ["--strict", "--ignore-missing-imports"]
         pass_filenames: false
         entry: mypy src/infer_check/

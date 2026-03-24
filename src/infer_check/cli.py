@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -45,7 +46,7 @@ def main() -> None:
         "4bit=mlx-community/Llama-3.1-8B-Instruct-4bit'"
     ),
 )
-@click.option("--backend", default="mlx-lm", show_default=True, help="Backend type.")
+@click.option("--backend", default=None, help="Backend type (auto-detected if omitted).")
 @click.option(
     "--prompts",
     required=True,
@@ -66,7 +67,7 @@ def main() -> None:
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
 def sweep(
     models: str,
-    backend: str,
+    backend: str | None,
     prompts: str,
     output: Path,
     baseline: str | None,
@@ -83,10 +84,9 @@ def sweep(
           --models "bf16=mlx-community/Llama-3.1-8B-Instruct-bf16,
                     4bit=mlx-community/Llama-3.1-8B-Instruct-4bit,
                     3bit=mlx-community/Llama-3.1-8B-Instruct-3bit" \\
-          --backend mlx-lm \\
-          --prompts ./prompt-suites/reasoning.jsonl
+          --prompts reasoning
     """
-    from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
     from infer_check.suites.loader import load_suite
 
@@ -113,10 +113,7 @@ def sweep(
         console.print(f"[red]Baseline '{baseline_label}' not found in model map.[/red]")
         raise SystemExit(1)
 
-    console.print(
-        f"[bold cyan]sweep[/bold cyan] backend={backend} "
-        f"baseline={baseline_label} models={quant_levels}"
-    )
+    console.print(f"[bold cyan]sweep[/bold cyan] baseline={baseline_label} models={quant_levels}")
     for label, path in model_map.items():
         tag = " (baseline)" if label == baseline_label else ""
         console.print(f"  {label}: {path}{tag}")
@@ -126,13 +123,12 @@ def sweep(
     # Build a separate backend for each model
     backend_map: dict[str, Any] = {}
     for label, model_path in model_map.items():
-        config = BackendConfig(
-            backend_type=backend,  # type: ignore[arg-type]
-            model_id=model_path,
-            quantization=label,
+        backend_map[label] = get_backend_for_model(
+            model_str=model_path,
+            backend_type=backend,
             base_url=base_url,
+            quantization=label,
         )
-        backend_map[label] = get_backend(config)
 
     runner = TestRunner()
     result = asyncio.run(
@@ -147,7 +143,18 @@ def sweep(
 
     # Persist results
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"sweep_{model_map[baseline_label].replace('/', '_')}_{backend}.json"
+    # Use the resolved backend name in the filename when --backend is omitted
+    if backend is not None:
+        backend_name = backend
+    else:
+        baseline_backend = backend_map.get(baseline_label)
+        if baseline_backend is None:
+            backend_name = "unknown"
+        else:
+            # Prefer an explicit backend adapter name, fall back to the class name
+            backend_name = getattr(baseline_backend, "name", type(baseline_backend).__name__)
+    ts = int(result.timestamp.timestamp())
+    out_path = output / f"sweep_{model_map[baseline_label].replace('/', '_')}_{backend_name}_{ts}.json"
     result.save(out_path)
     console.print(f"[green]Results saved to {out_path}[/green]")
 
@@ -209,6 +216,265 @@ def sweep(
 
 
 # ---------------------------------------------------------------------------
+# compare
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("model_a")
+@click.argument("model_b")
+@click.option(
+    "--prompts",
+    default="adversarial-numerics",
+    show_default=True,
+    help="Bundled suite name (e.g. 'reasoning') or path to a .jsonl file.",
+)
+@click.option(
+    "--output",
+    default="./results/compare/",
+    show_default=True,
+    type=click.Path(path_type=Path),
+    help="Output directory.",
+)
+@click.option(
+    "--base-url",
+    default=None,
+    help=("Base URL override for HTTP backends. Applied to both models unless they resolve to mlx-lm."),
+)
+@click.option(
+    "--label-a",
+    default=None,
+    help="Custom label for model A (defaults to auto-derived short name).",
+)
+@click.option(
+    "--label-b",
+    default=None,
+    help="Custom label for model B (defaults to auto-derived short name).",
+)
+@click.option(
+    "--report/--no-report",
+    default=True,
+    show_default=True,
+    help="Generate an HTML comparison report after the run.",
+)
+def compare(
+    model_a: str,
+    model_b: str,
+    prompts: str,
+    output: Path,
+    base_url: str | None,
+    label_a: str | None,
+    label_b: str | None,
+    report: bool,
+) -> None:
+    """Compare two quantizations of the same model.
+
+    MODEL_A and MODEL_B are model specs — HuggingFace repos, Ollama tags,
+    or local GGUF paths.  The backend is auto-detected from the identifier,
+    or you can use an explicit prefix (ollama:, mlx:, gguf:, vllm-mlx:).
+
+    \b
+    Examples:
+        # Two MLX quants
+        infer-check compare \\
+          mlx-community/Llama-3.1-8B-Instruct-4bit \\
+          mlx-community/Llama-3.1-8B-Instruct-8bit
+
+        # MLX native vs Ollama GGUF
+        infer-check compare \\
+          mlx-community/Llama-3.1-8B-Instruct-4bit \\
+          ollama:llama3.1:8b-instruct-q4_K_M
+
+        # Bartowski GGUF vs Unsloth GGUF (both via Ollama)
+        infer-check compare \\
+          ollama:bartowski/Llama-3.1-8B-Instruct-GGUF \\
+          ollama:unsloth/Llama-3.1-8B-Instruct-GGUF
+    """
+    # ── Resolve both model specs ─────────────────────────────────────
+    from infer_check.resolve import resolve_model
+    from infer_check.runner import TestRunner
+    from infer_check.suites.loader import load_suite
+
+    resolved_a = resolve_model(model_a, base_url=base_url, label=label_a)
+    resolved_b = resolve_model(model_b, base_url=base_url, label=label_b)
+
+    console.print(
+        f"[bold cyan]compare[/bold cyan] "
+        f"A={resolved_a.label} ({resolved_a.backend}) "
+        f"vs B={resolved_b.label} ({resolved_b.backend})"
+    )
+
+    prompt_list = load_suite(_resolve_prompts(prompts))
+    console.print(f"  prompts: {len(prompt_list)} from '{prompts}'")
+
+    # ── Build backends ───────────────────────────────────────────────
+    from infer_check.backends.base import BackendConfig, get_backend
+
+    config_a = BackendConfig(
+        backend_type=resolved_a.backend,
+        model_id=resolved_a.model_id,
+        quantization=resolved_a.label,
+        base_url=resolved_a.base_url,
+        extra={"chat": False},
+    )
+    config_b = BackendConfig(
+        backend_type=resolved_b.backend,
+        model_id=resolved_b.model_id,
+        quantization=resolved_b.label,
+        base_url=resolved_b.base_url,
+        extra={"chat": False},
+    )
+    backend_a = get_backend(config_a)
+    backend_b = get_backend(config_b)
+
+    # ── Run comparison ───────────────────────────────────────────────
+    runner = TestRunner()
+    compare_result = asyncio.run(
+        runner.compare(
+            backend_a=backend_a,
+            backend_b=backend_b,
+            prompts=prompt_list,
+            label_a=resolved_a.label,
+            label_b=resolved_b.label,
+        )
+    )
+
+    # ── Persist results ──────────────────────────────────────────────
+    output.mkdir(parents=True, exist_ok=True)
+
+    from infer_check.utils import sanitize_filename
+
+    safe_a = sanitize_filename(resolved_a.label)
+    safe_b = sanitize_filename(resolved_b.label)
+    ts = int(compare_result.timestamp.timestamp())
+    out_path = output / f"compare_{safe_a}_vs_{safe_b}_{ts}.json"
+    compare_result.save(out_path)
+    console.print(f"[green]Results saved to {out_path}[/green]")
+
+    # ── Summary table ────────────────────────────────────────────────
+    table = Table(
+        title=f"Compare: {resolved_a.label} vs {resolved_b.label}",
+        show_header=True,
+        header_style="bold magenta",
+    )
+    table.add_column("metric", style="cyan")
+    table.add_column("value", justify="right")
+
+    n = len(compare_result.comparisons)
+    severities = {"identical": 0, "minor": 0, "moderate": 0, "severe": 0}
+    for c in compare_result.comparisons:
+        sev = c.metadata.get("severity", "unknown") if hasattr(c, "metadata") else "unknown"
+        if sev in severities:
+            severities[sev] += 1
+
+    table.add_row("prompts", str(n))
+    table.add_row(
+        "flip rate",
+        f"[{'red' if compare_result.flip_rate > 0.1 else 'green'}]{compare_result.flip_rate:.1%}[/]",
+    )
+    if compare_result.mean_kl_divergence is not None:
+        table.add_row("mean KL divergence", f"{compare_result.mean_kl_divergence:.6f}")
+    if compare_result.mean_text_similarity is not None:
+        table.add_row("mean text similarity", f"{compare_result.mean_text_similarity:.4f}")
+    else:
+        table.add_row("mean text similarity", "N/A")
+    table.add_row(
+        "identical / minor / moderate / severe",
+        f"{severities['identical']} / {severities['minor']} / "
+        f"{severities['moderate']} / [red]{severities['severe']}[/red]",
+    )
+
+    console.print(table)
+
+    # ── Per-category breakdown ───────────────────────────────────────
+    if compare_result.per_category_stats:
+        cat_table = Table(
+            title="Per-Category Breakdown",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        cat_table.add_column("category", style="cyan")
+        cat_table.add_column("prompts", justify="right")
+        cat_table.add_column("flip rate", justify="right")
+        cat_table.add_column("mean similarity", justify="right")
+
+        for cat, stats in sorted(compare_result.per_category_stats.items()):
+            cat_table.add_row(
+                cat,
+                str(stats.get("count", 0)),
+                f"{stats.get('flip_rate', 0.0):.1%}",
+                f"{stats.get('mean_similarity', 0.0):.4f}",
+            )
+
+        console.print(cat_table)
+
+    # ── Flipped prompts detail ───────────────────────────────────────
+    flipped = [c for c in compare_result.comparisons if c.metadata.get("flipped", False)]
+    if flipped:
+        flip_table = Table(
+            title=f"Flipped Prompts ({len(flipped)})",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        flip_table.add_column("prompt", style="dim", max_width=50, no_wrap=True)
+        flip_table.add_column("category", style="cyan")
+        flip_table.add_column("strategy", style="dim")
+        flip_table.add_column(f"{resolved_a.label}", max_width=30, no_wrap=True)
+        flip_table.add_column(f"{resolved_b.label}", max_width=30, no_wrap=True)
+        flip_table.add_column("similarity", justify="right")
+
+        for c in flipped:
+            prompt_text = (
+                c.metadata.get("prompt_text")
+                or getattr(c.baseline, "prompt_id", None)
+                or getattr(c.baseline, "text", None)
+                or "???"
+            )
+            # Truncate long prompt text for display.
+            if len(prompt_text) > 47:
+                prompt_text = prompt_text[:47] + "..."
+
+            ans_a = c.metadata.get("answer_a", "?")
+            ans_b = c.metadata.get("answer_b", "?")
+            # Truncate long answers.
+            if len(str(ans_a)) > 27:
+                ans_a = str(ans_a)[:27] + "..."
+            if len(str(ans_b)) > 27:
+                ans_b = str(ans_b)[:27] + "..."
+
+            cat = (
+                c.metadata.get("prompt_category")
+                or c.metadata.get("category")
+                or c.baseline.metadata.get("prompt_category")
+                or c.baseline.metadata.get("category")
+                or c.test.metadata.get("prompt_category")
+                or c.test.metadata.get("category")
+                or "?"
+            )
+            flip_table.add_row(
+                prompt_text,
+                cat,
+                c.metadata.get("extraction_strategy", "?"),
+                f"[green]{ans_a}[/green]",
+                f"[red]{ans_b}[/red]",
+                f"{c.text_similarity:.3f}",
+            )
+
+        console.print(flip_table)
+
+    # ── Report generation ───────────────────────────────────────────
+    if report:
+        from infer_check.reporting.html import generate_report
+
+        ts = int(compare_result.timestamp.timestamp())
+        report_path = output / f"report_{safe_a}_vs_{safe_b}_{ts}.html"
+        generate_report(output, report_path)
+        console.print(f"[green]HTML report generated at {report_path}[/green]")
+    elif n > 0 and not flipped:
+        console.print("[bold green]No answer flips detected.[/bold green]")
+
+
+# ---------------------------------------------------------------------------
 # diff
 # ---------------------------------------------------------------------------
 
@@ -259,16 +525,12 @@ def diff(
     from infer_check.suites.loader import load_suite
 
     backend_names = [b.strip() for b in backends.split(",") if b.strip()]
-    url_list: list[str | None] = (
-        [u.strip() for u in base_urls.split(",")] if base_urls else [None] * len(backend_names)
-    )
+    url_list: list[str | None] = [u.strip() for u in base_urls.split(",")] if base_urls else [None] * len(backend_names)
     # Pad url_list if shorter than backend_names
     while len(url_list) < len(backend_names):
         url_list.append(None)
 
-    console.print(
-        f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}"
-    )
+    console.print(f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}")
 
     prompt_list = load_suite(_resolve_prompts(prompts))
 
@@ -297,7 +559,8 @@ def diff(
 
     # Persist results
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"diff_{model.replace('/', '_')}.json"
+    ts = int(datetime.now(UTC).timestamp())
+    out_path = output / f"diff_{model.replace('/', '_')}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [c.model_dump(mode="json") for c in comparisons],
@@ -336,7 +599,7 @@ def diff(
 
 @main.command()
 @click.option("--model", required=True, help="Model ID or HuggingFace path.")
-@click.option("--backend", default="mlx-lm", show_default=True, help="Backend type.")
+@click.option("--backend", default=None, help="Backend type (auto-detected if omitted).")
 @click.option(
     "--prompts",
     required=True,
@@ -358,32 +621,30 @@ def diff(
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
 def stress(
     model: str,
-    backend: str,
+    backend: str | None,
     prompts: str,
     output: Path,
     concurrency: str,
     base_url: str | None,
 ) -> None:
     """Stress-test a backend with varying concurrency levels."""
-    from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
     from infer_check.suites.loader import load_suite
 
     concurrency_levels = [int(c.strip()) for c in concurrency.split(",") if c.strip()]
 
+    backend_instance = get_backend_for_model(
+        model_str=model,
+        backend_type=backend,
+        base_url=base_url,
+    )
+
     console.print(
-        f"[bold cyan]stress[/bold cyan] model={model} backend={backend} "
-        f"concurrency={concurrency_levels}"
+        f"[bold cyan]stress[/bold cyan] model={model} backend={backend_instance.name} concurrency={concurrency_levels}"
     )
 
     prompt_list = load_suite(_resolve_prompts(prompts))
-
-    config = BackendConfig(
-        backend_type=backend,  # type: ignore[arg-type]
-        model_id=model,
-        base_url=base_url,
-    )
-    backend_instance = get_backend(config)
 
     runner = TestRunner()
     stress_results = asyncio.run(
@@ -395,7 +656,8 @@ def stress(
     )
 
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"stress_{model.replace('/', '_')}_{backend}.json"
+    ts = int(datetime.now(UTC).timestamp())
+    out_path = output / f"stress_{model.replace('/', '_')}_{backend_instance.name}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [r.model_dump(mode="json") for r in stress_results],
@@ -427,7 +689,7 @@ def stress(
 
 @main.command()
 @click.option("--model", required=True, help="Model ID or HuggingFace path.")
-@click.option("--backend", default="mlx-lm", show_default=True, help="Backend type.")
+@click.option("--backend", default=None, help="Backend type (auto-detected if omitted).")
 @click.option(
     "--prompts",
     required=True,
@@ -444,27 +706,26 @@ def stress(
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
 def determinism(
     model: str,
-    backend: str,
+    backend: str | None,
     prompts: str,
     output: Path,
     runs: int,
     base_url: str | None,
 ) -> None:
     """Test whether a backend produces identical outputs across repeated runs at temperature=0."""
-    from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
     from infer_check.suites.loader import load_suite
 
-    console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend} runs={runs}")
-
-    prompt_list = load_suite(_resolve_prompts(prompts))
-
-    config = BackendConfig(
-        backend_type=backend,  # type: ignore[arg-type]
-        model_id=model,
+    backend_instance = get_backend_for_model(
+        model_str=model,
+        backend_type=backend,
         base_url=base_url,
     )
-    backend_instance = get_backend(config)
+
+    console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")
+
+    prompt_list = load_suite(_resolve_prompts(prompts))
 
     runner = TestRunner()
     det_results = asyncio.run(
@@ -476,7 +737,8 @@ def determinism(
     )
 
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"determinism_{model.replace('/', '_')}_{backend}.json"
+    ts = int(datetime.now(UTC).timestamp())
+    out_path = output / f"determinism_{model.replace('/', '_')}_{backend_instance.name}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [r.model_dump(mode="json") for r in det_results],
@@ -507,8 +769,7 @@ def determinism(
     if det_results:
         overall = sum(r.determinism_score for r in det_results) / len(det_results)
         console.print(
-            f"\n[bold]Overall determinism score:[/bold] "
-            f"[{'green' if overall == 1.0 else 'yellow'}]{overall:.2%}[/]"
+            f"\n[bold]Overall determinism score:[/bold] [{'green' if overall == 1.0 else 'yellow'}]{overall:.2%}[/]"
         )
 
 

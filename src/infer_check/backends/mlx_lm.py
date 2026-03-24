@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gc
 import time
-from typing import Any
+from typing import Any, cast
 
 from infer_check.types import InferenceResult, Prompt
 
@@ -38,6 +38,9 @@ class MLXBackend:
         Uses ``mlx_lm.generate_step`` when available so that per-token
         logprobs can be captured.  Falls back to the simpler
         ``mlx_lm.generate`` otherwise.
+
+        The actual computation is synchronous (MLX is single-threaded),
+        but the method is async to satisfy the ``BackendAdapter`` protocol.
         """
         self._ensure_loaded()
 
@@ -51,16 +54,16 @@ class MLXBackend:
                 return self._generate_simple(prompt)
             except Exception as inner:
                 raise RuntimeError(
-                    f"MLX generation failed for prompt '{prompt.text[:80]}...'\n"
-                    f"Model: {self._model_id}\n"
-                    f"Error: {inner}"
+                    f"MLX generation failed for prompt '{prompt.text[:80]}...'\nModel: {self._model_id}\nError: {inner}"
                 ) from inner
 
     async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        """Generate inference results for a batch of prompts."""
-        import asyncio
+        """Generate inference results for a batch of prompts.
 
-        return list(await asyncio.gather(*(self.generate(p) for p in prompts)))
+        MLX is single-threaded so we run sequentially rather than
+        using ``asyncio.gather`` which would not yield parallelism.
+        """
+        return [await self.generate(p) for p in prompts]
 
     async def health_check(self) -> bool:
         """Load the model and generate a single token."""
@@ -96,17 +99,14 @@ class MLXBackend:
         try:
             from mlx_lm import load
         except ImportError:
-            raise RuntimeError(
-                "mlx-lm not installed. Install with: pip install infer-check[mlx]"
-            ) from None
+            raise RuntimeError("mlx-lm not installed. Install with: pip install infer-check[mlx]") from None
 
         from pathlib import Path
 
         model_path = Path(self._model_id).expanduser()
         if model_path.is_absolute() and not model_path.exists():
             raise FileNotFoundError(
-                f"Model path does not exist: {model_path}\n"
-                f"Check the path or use a HuggingFace repo ID instead."
+                f"Model path does not exist: {model_path}\nCheck the path or use a HuggingFace repo ID instead."
             )
 
         repo_or_path = str(model_path) if model_path.exists() else self._model_id
@@ -137,16 +137,9 @@ class MLXBackend:
         Raw prompts sent to Instruct models produce undefined behavior that
         varies across quantization levels, making comparisons meaningless.
         """
-        if (
-            hasattr(self._tokenizer, "apply_chat_template")
-            and self._tokenizer.chat_template is not None
-        ):
+        if hasattr(self._tokenizer, "apply_chat_template") and self._tokenizer.chat_template is not None:
             messages = [{"role": "user", "content": text}]
-            return str(
-                self._tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-            )
+            return str(self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
         return text
 
     def _generate_simple(self, prompt: Prompt) -> InferenceResult:
@@ -193,12 +186,17 @@ class MLXBackend:
         formatted = self._format_prompt(prompt.text)
         input_ids = self._tokenizer.encode(formatted, return_tensors="mlx")
 
+        # Configurable top-K to avoid memory explosion. Default to 10.
+        top_k = prompt.metadata.get("top_k_logprobs", 10) if prompt.metadata else 10
+
         tokens: list[str] = []
         logprobs: list[float] = []
+        distributions: list[list[float]] = []
+        distribution_metadata: list[dict[str, int | str]] = []
 
         start = time.perf_counter()
 
-        for step_idx, (token, logprob_val) in enumerate(
+        for step_idx, (token, logprob_dist) in enumerate(
             generate_step(
                 prompt=input_ids,
                 model=self._model,
@@ -208,14 +206,70 @@ class MLXBackend:
             if step_idx >= prompt.max_tokens:
                 break
 
-            token_str = self._tokenizer.decode([token.item()])
+            # logprob_dist is an mlx array of full-vocab logprobs.
+            # We only keep top-K to save memory.
+            if top_k > 0:
+                # mx.argpartition is not always available or might be slow for small K.
+                # Since we need to move to CPU anyway for serialization, we can do it there.
+                # But to avoid huge tolist(), we can use mx.topk if available or just move a bit.
+
+                # Clamp K to the vocabulary size to avoid out-of-bounds issues.
+                vocab_size = int(logprob_dist.shape[0])
+                if vocab_size <= 0:
+                    # Nothing to record for this step.
+                    continue
+                effective_top_k = int(top_k)
+                if effective_top_k < 1:
+                    # Should not happen due to the outer condition, but guard defensively.
+                    continue
+                if effective_top_k > vocab_size:
+                    effective_top_k = vocab_size
+
+                # Get top-K indices and values
+                if hasattr(mx, "topk"):
+                    # mx.topk is the most efficient way to get top-K if available.
+                    top_k_values, top_k_indices = mx.topk(logprob_dist, effective_top_k)
+                    dist_list = cast(list[float], top_k_values.tolist())
+                    dist_indices = cast(list[int], top_k_indices.tolist())
+                elif hasattr(mx, "argpartition"):
+                    # Fallback to argpartition which is often available in newer MLX.
+                    top_k_indices = mx.argpartition(-logprob_dist, effective_top_k - 1)[:effective_top_k]
+                    top_k_values = logprob_dist[top_k_indices]
+
+                    # Sort them for consistency since argpartition doesn't guarantee order
+                    sort_idx = mx.argsort(-top_k_values)
+                    top_k_indices = top_k_indices[sort_idx]
+                    top_k_values = top_k_values[sort_idx]
+
+                    dist_list = cast(list[float], top_k_values.tolist())
+                    dist_indices = cast(list[int], top_k_indices.tolist())
+                else:
+                    # CPU/Numpy fallback if MLX lacks both topk and argpartition.
+                    import numpy as np
+
+                    dist_np = np.array(logprob_dist)
+                    top_k_indices_np = np.argpartition(-dist_np, effective_top_k - 1)[:effective_top_k]
+                    top_k_values_np = dist_np[top_k_indices_np]
+
+                    sort_idx_np = np.argsort(-top_k_values_np)
+                    top_k_indices_final = top_k_indices_np[sort_idx_np]
+                    top_k_values_final = top_k_values_np[sort_idx_np]
+
+                    dist_list = cast(list[float], top_k_values_final.tolist())
+                    dist_indices = cast(list[int], top_k_indices_final.tolist())
+
+                distributions.append(dist_list)
+                meta: dict[str, int | str] = {}
+                for i, idx in enumerate(dist_indices):
+                    meta[f"id_{i}"] = int(idx)
+                distribution_metadata.append(meta)
+
+            token_id = int(token.item())
+            token_str = self._tokenizer.decode([token_id])
             tokens.append(token_str)
 
-            # logprob_val may be an mx.array scalar or a float
-            if hasattr(logprob_val, "item"):
-                logprobs.append(float(logprob_val.item()))
-            else:
-                logprobs.append(float(logprob_val))
+            # The logprob of the chosen token (from the full distribution)
+            logprobs.append(float(logprob_dist[token_id]))
 
         elapsed_s = time.perf_counter() - start
         text = "".join(tokens)
@@ -231,6 +285,8 @@ class MLXBackend:
             quantization=self._quantization,
             tokens=tokens,
             logprobs=logprobs if logprobs else None,
+            distributions=distributions if distributions else None,
+            distribution_metadata=distribution_metadata if distribution_metadata else None,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

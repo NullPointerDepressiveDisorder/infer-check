@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 
 import httpx
@@ -36,6 +37,7 @@ class LlamaCppBackend:
             "prompt": prompt.text,
             "n_predict": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
+            "n_probs": 10,  # Request top 10 probabilities for KL divergence
         }
 
         start = time.perf_counter()
@@ -63,26 +65,45 @@ class LlamaCppBackend:
         try:
             data = response.json()
         except Exception as exc:
-            raise RuntimeError(
-                f"llama-server returned non-JSON response: {response.text[:200]}"
-            ) from exc
+            raise RuntimeError(f"llama-server returned non-JSON response: {response.text[:200]}") from exc
 
         content: str = data.get("content", "")
 
         # Extract per-token data ------------------------------------------
         tokens: list[str] = []
         logprobs: list[float] | None = None
+        distributions: list[list[float]] | None = None
+        distribution_metadata: list[dict[str, int | str]] | None = None
 
         completion_probs = data.get("completion_probabilities")
         if completion_probs:
             logprobs = []
+            distributions = []
+            distribution_metadata = []
             for entry in completion_probs:
                 tok_str = entry.get("content", "")
                 tokens.append(tok_str)
-                # Top prob entry (index 0) contains the chosen token logprob.
+                # Top prob entry (index 0) contains the chosen token linear prob.
                 probs = entry.get("probs", [])
                 if probs:
-                    logprobs.append(float(probs[0].get("prob", 0.0)))
+                    # llama-server returns linear probabilities (0..1).
+                    # We convert to log-probabilities (log-space) to match the rest of the codebase.
+                    # Epsilon 1e-10 matches kl_divergence epsilon in the analyzer.
+                    epsilon = 1e-10
+                    logprobs.append(math.log(max(float(probs[0].get("prob", 0.0)), epsilon)))
+
+                    dist_logprobs = []
+                    for p in probs:
+                        p_val = max(float(p.get("prob", 0.0)), epsilon)
+                        dist_logprobs.append(math.log(p_val))
+                    distributions.append(dist_logprobs)
+
+                    # Store token IDs to allow alignment if needed.
+                    dist_meta: dict[str, int | str] = {}
+                    for i, p in enumerate(probs):
+                        if "id" in p:
+                            dist_meta[f"id_{i}"] = int(p["id"])
+                    distribution_metadata.append(dist_meta)
         else:
             tokens = content.split()
 
@@ -98,6 +119,8 @@ class LlamaCppBackend:
             model_id=data.get("model", "unknown"),
             tokens=tokens,
             logprobs=logprobs,
+            distributions=distributions,
+            distribution_metadata=distribution_metadata,
             text=content,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

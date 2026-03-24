@@ -12,6 +12,7 @@ __all__ = [
     "SweepResult",
     "StressResult",
     "DeterminismResult",
+    "CompareResult",
 ]
 
 
@@ -58,6 +59,8 @@ class InferenceResult(BaseInferModel):
     quantization: str | None = None
     tokens: list[str]
     logprobs: list[float] | None = None
+    distributions: list[list[float]] | None = None
+    distribution_metadata: list[dict[str, int | str]] | None = None
     text: str
     latency_ms: float
     tokens_per_second: float | None = None
@@ -103,3 +106,19 @@ class DeterminismResult(BaseInferModel):
     identical_count: int
     divergence_positions: list[int]
     determinism_score: float
+
+
+class CompareResult(BaseInferModel):
+    """Result of comparing two inference configurations (e.g., models, backends, or quantizations)."""
+
+    model_a: str  # label or repo ID for configuration A (e.g., model or run variant)
+    model_b: str  # label or repo ID for configuration B (e.g., model or run variant)
+    backend_a: str
+    backend_b: str
+    comparisons: list[ComparisonResult]
+    flip_rate: float  # fraction of prompts where the "answer" changed
+    mean_kl_divergence: float | None = None
+    mean_text_similarity: float | None = None
+    per_category_stats: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=_now)
+    metadata: dict[str, Any] = Field(default_factory=dict)

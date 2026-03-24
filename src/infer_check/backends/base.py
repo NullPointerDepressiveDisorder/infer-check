@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from infer_check.types import InferenceResult, Prompt
 
-__all__ = ["BackendAdapter", "BackendConfig", "get_backend"]
+__all__ = ["BackendAdapter", "BackendConfig", "get_backend", "get_backend_for_model"]
 
 
 class BackendAdapter(Protocol):
@@ -73,8 +73,7 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
 
         if not config.base_url:
             raise ValueError(
-                "openai-compat backend requires --base-url. "
-                "Example: --base-url http://localhost:11434/v1 (Ollama)"
+                "openai-compat backend requires --base-url. Example: --base-url http://localhost:11434/v1 (Ollama)"
             )
         return OpenAICompatBackend(
             base_url=config.base_url,
@@ -85,3 +84,28 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
     else:
         supported = ", ".join(["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"])
         raise ValueError(f"Unknown backend type: '{config.backend_type}'. Supported: {supported}")
+
+
+def get_backend_for_model(
+    model_str: str,
+    backend_type: str | None = None,
+    base_url: str | None = None,
+    quantization: str | None = None,
+) -> BackendAdapter:
+    """Resolve model string to a backend and instantiate it.
+
+    If backend_type is provided, it forces that backend. Otherwise, it resolves
+    based on the model string.
+    """
+    from infer_check.resolve import resolve_model
+
+    # Always normalize the model string first to ensure consistent model_id/base_url
+    resolved = resolve_model(model_str, base_url=base_url)
+    config = BackendConfig(
+        backend_type=backend_type or resolved.backend,  # type: ignore
+        model_id=resolved.model_id,
+        base_url=base_url or resolved.base_url,
+        quantization=quantization or resolved.label,
+    )
+
+    return get_backend(config)

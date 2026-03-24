@@ -82,9 +82,7 @@ class OpenAICompatBackend:
                 "Ensure the server is running and the base_url is correct."
             ) from exc
         except httpx.TimeoutException as exc:
-            raise RuntimeError(
-                f"Request to {self._base_url}/v1/chat/completions timed out after 120s."
-            ) from exc
+            raise RuntimeError(f"Request to {self._base_url}/v1/chat/completions timed out after 120s.") from exc
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             body = exc.response.text[:500]
@@ -155,8 +153,7 @@ class OpenAICompatBackend:
                 ) from exc
             elif status == 401 or status == 403:
                 raise RuntimeError(
-                    f"Authentication failed at {self._base_url} (HTTP {status}). "
-                    f"Check your API key."
+                    f"Authentication failed at {self._base_url} (HTTP {status}). Check your API key."
                 ) from exc
             else:
                 raise RuntimeError(f"Server returned HTTP {status}: {body}") from exc
@@ -177,14 +174,42 @@ class OpenAICompatBackend:
         # Parse logprobs ---------------------------------------------------
         tokens: list[str] = []
         logprobs_list: list[float] | None = None
+        distributions: list[list[float]] | None = None
+        distribution_metadata: list[dict[str, int | str]] | None = None
 
         lp_data = choice.get("logprobs")
         if lp_data and lp_data.get("tokens"):
             tokens = lp_data["tokens"]
             raw_logprobs = lp_data.get("token_logprobs", [])
-            logprobs_list = [
-                float(v) if v is not None and not math.isnan(v) else 0.0 for v in raw_logprobs
-            ]
+            logprobs_list = [float(v) if v is not None and not math.isnan(v) else -9999.0 for v in raw_logprobs]
+
+            top_logprobs = lp_data.get("top_logprobs")
+            if top_logprobs:
+                distributions = []
+                distribution_metadata = []
+                for entry in top_logprobs:
+                    # entry is a dict of token: logprob
+                    # Sort by token string to ensure deterministic order
+                    if not entry:
+                        distributions.append([])
+                        distribution_metadata.append({})
+                        continue
+                    sorted_items = sorted(entry.items())
+                    cleaned_items: list[tuple[str, float]] = []
+                    for tok, v in sorted_items:
+                        # Mirror token_logprobs sanitization: treat None/NaN/invalid as -9999.0
+                        try:
+                            fv = float(v) if v is not None else float("nan")
+                        except (TypeError, ValueError):
+                            fv = float("nan")
+                        if math.isnan(fv):
+                            fv = -9999.0
+                        cleaned_items.append((tok, fv))
+                    distributions.append([fv for _, fv in cleaned_items])
+                    meta: dict[str, int | str] = {}
+                    for i, (tok, _) in enumerate(cleaned_items):
+                        meta[f"id_{i}"] = tok
+                    distribution_metadata.append(meta)
         else:
             tokens = text.split()
 
@@ -199,6 +224,8 @@ class OpenAICompatBackend:
             model_id=self._model_id,
             tokens=tokens,
             logprobs=logprobs_list,
+            distributions=distributions,
+            distribution_metadata=distribution_metadata,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

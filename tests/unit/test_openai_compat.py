@@ -49,14 +49,10 @@ def test_generate_completions_404() -> None:
     backend = OpenAICompatBackend(base_url="http://localhost:8000", model_id="dummy", chat=False)
     prompt = Prompt(id="p1", text="Hello", max_tokens=10)
 
-    mock_response = httpx.Response(
-        404, request=httpx.Request("POST", "http://localhost:8000/v1/completions")
-    )
+    mock_response = httpx.Response(404, request=httpx.Request("POST", "http://localhost:8000/v1/completions"))
     with patch(
         "httpx.AsyncClient.post",
-        side_effect=httpx.HTTPStatusError(
-            "404 Not Found", request=mock_response.request, response=mock_response
-        ),
+        side_effect=httpx.HTTPStatusError("404 Not Found", request=mock_response.request, response=mock_response),
     ):
         with pytest.raises(RuntimeError) as exc:
             asyncio.run(backend.generate(prompt))

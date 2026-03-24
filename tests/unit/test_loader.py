@@ -9,7 +9,7 @@ from infer_check.types import Prompt
 
 def test_load_suite_actual_reasoning() -> None:
     # Attempt to load the actual suites
-    suite_path = Path("prompt-suites/reasoning.jsonl")
+    suite_path = Path("src/infer_check/prompt_suites/reasoning.jsonl")
     if not suite_path.exists():
         pytest.skip(f"Test suite not found at {suite_path}")
 
