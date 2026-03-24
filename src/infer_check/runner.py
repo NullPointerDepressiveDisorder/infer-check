@@ -67,7 +67,7 @@ class TestRunner:
             matcher = difflib.SequenceMatcher(None, baseline.text, test.text)
             text_similarity = matcher.ratio()
 
-        is_failure = text_similarity < (1.0 - threshold)
+        is_failure = text_similarity < threshold
 
         # Severity tiers
         if text_similarity == 1.0:

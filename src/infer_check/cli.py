@@ -143,8 +143,14 @@ def sweep(
 
     # Persist results
     output.mkdir(parents=True, exist_ok=True)
+    # Use the resolved backend name in the filename when --backend is omitted
+    if backend is not None:
+        backend_name = backend
+    else:
+        baseline_backend = backend_map.get(baseline_label)
+        backend_name = type(baseline_backend).__name__ if baseline_backend is not None else "unknown"
     ts = int(result.timestamp.timestamp())
-    out_path = output / f"sweep_{model_map[baseline_label].replace('/', '_')}_{backend}_{ts}.json"
+    out_path = output / f"sweep_{model_map[baseline_label].replace('/', '_')}_{backend_name}_{ts}.json"
     result.save(out_path)
     console.print(f"[green]Results saved to {out_path}[/green]")
 
@@ -647,7 +653,7 @@ def stress(
 
     output.mkdir(parents=True, exist_ok=True)
     ts = int(datetime.now(UTC).timestamp())
-    out_path = output / f"stress_{model.replace('/', '_')}_{backend}_{ts}.json"
+    out_path = output / f"stress_{model.replace('/', '_')}_{backend_instance.name}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [r.model_dump(mode="json") for r in stress_results],
@@ -728,7 +734,7 @@ def determinism(
 
     output.mkdir(parents=True, exist_ok=True)
     ts = int(datetime.now(UTC).timestamp())
-    out_path = output / f"determinism_{model.replace('/', '_')}_{backend}_{ts}.json"
+    out_path = output / f"determinism_{model.replace('/', '_')}_{backend_instance.name}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [r.model_dump(mode="json") for r in det_results],

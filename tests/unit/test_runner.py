@@ -105,12 +105,13 @@ def test_compare_threshold_edge_cases(runner: TestRunner) -> None:
         latency_ms=10.0,
     )
 
-    # The threshold logic in the runner is: is_failure = text_similarity < (1.0 - threshold)
-    # So threshold is actually "allowed divergence ratio".
+    # The threshold logic in the runner is: is_failure = text_similarity < threshold
+    # So threshold is the minimum similarity to pass.
     # default 0.5 threshold -> passes as sim 0.8 >= 0.5
     comp_default = runner._compare(baseline, test_res, threshold=0.5)
     assert comp_default.is_failure is False
 
-    # an allowed divergence of 0.1 (strict) means passing requires text_similarity >= 0.9
-    comp_strict = runner._compare(baseline, test_res, threshold=0.1)
+    # A minimum similarity of 0.9 (strict) means passing requires text_similarity >= 0.9
+    # Since similarity is ~0.8, it should fail.
+    comp_strict = runner._compare(baseline, test_res, threshold=0.9)
     assert comp_strict.is_failure is True

@@ -33,8 +33,13 @@ def sanitize_filename(label: str) -> str:
     # Handle Windows reserved device names
     # CON, PRN, AUX, NUL, COM1-9, LPT1-9
     reserved_pattern = r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$"
-    if re.match(reserved_pattern, safe, re.IGNORECASE):
-        safe += "_"
+    stem = safe.split(".", 1)[0]
+    if re.match(reserved_pattern, stem, re.IGNORECASE):
+        if "." in safe:
+            name, ext = safe.split(".", 1)
+            safe = f"{name}_{'.' + ext}"
+        else:
+            safe += "_"
 
     # Ensure we have something left
     return safe if safe else "model"
