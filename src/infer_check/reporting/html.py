@@ -891,12 +891,15 @@ def _build_failure_cards(
             if not comp.is_failure:
                 continue
             category = (
-                comp.metadata.get("category")
+                comp.metadata.get("prompt_category")
+                or comp.metadata.get("category")
+                or comp.test.metadata.get("prompt_category")
                 or comp.test.metadata.get("category")
+                or comp.baseline.metadata.get("prompt_category")
                 or comp.baseline.metadata.get("category")
                 or "general"
             )
-            prompt_text = comp.baseline.metadata.get("prompt_text", "")
+            prompt_text = comp.metadata.get("prompt_text") or comp.baseline.metadata.get("prompt_text", "")
             prompt_text = comp.baseline.text[:200] if not prompt_text else str(prompt_text)[:200]
             if len(prompt_text) == 200:
                 prompt_text += "…"

@@ -202,10 +202,9 @@ def _extract_code(text: str) -> ExtractedAnswer:
                         "for ",
                         "while ",
                         "#",
-                        "    ",
-                        "\t",
                     )
                 )
+                or line.startswith(("    ", "\t"))
                 or stripped == ""
             ):
                 code_lines.append(line)
@@ -322,9 +321,17 @@ def answers_match(
     Returns:
         ``True`` if the answers are functionally equivalent.
     """
-    # If either extraction failed, fall back to raw similarity.
+    # If both extraction failed, they match as non-answers.
+    if not a.value and not b.value:
+        return True
+
+    # If only one extraction failed, fall back to raw similarity.
     if not a.value or not b.value:
-        ratio = difflib.SequenceMatcher(None, a.value or "", b.value or "").ratio()
+        ratio = difflib.SequenceMatcher(
+            None,
+            a.raw_text or "",
+            b.raw_text or "",
+        ).ratio()
         return ratio >= similarity_threshold
 
     strategy = a.strategy  # both should share strategy if same prompt

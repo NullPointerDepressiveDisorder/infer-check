@@ -135,10 +135,8 @@ class TestRunner:
                     if b_id_types != t_id_types:
                         continue
 
-                    # Skip if there's no overlap between the two sets of IDs
-                    common_ids = set(b_ids.keys()) & set(t_ids.keys())
-                    if not common_ids:
-                        continue
+                    # Always align on the union of IDs, even if there is no overlap,
+                    # so that highly divergent steps are still reflected in the KL.
 
                     all_ids = sorted(set(b_ids.keys()) | set(t_ids.keys()), key=lambda x: str(x))
 
@@ -184,7 +182,11 @@ class TestRunner:
             failure_reason=f"[{severity}] Text similarity {text_similarity:.3f} below threshold"
             if is_failure
             else None,
-            metadata={"severity": severity},
+            metadata={
+                "severity": severity,
+                "prompt_text": baseline.metadata.get("prompt_text"),
+                "prompt_category": baseline.metadata.get("prompt_category"),
+            },
         )
 
     async def sweep(
@@ -410,7 +412,6 @@ class TestRunner:
             b = results_b.get(prompt.id)
             if a and b:
                 comp = self._compare(a, b)
-                comp.metadata["category"] = prompt.category
 
                 # Extract functional answers and check for flips.
                 ans_a = extract_answer(a.text, prompt.category)
@@ -443,7 +444,7 @@ class TestRunner:
         # Per-category stats.
         cat_groups: dict[str, list[ComparisonResult]] = defaultdict(list)
         for c in comparisons:
-            cat_groups[c.metadata.get("category", "general")].append(c)
+            cat_groups[c.metadata.get("prompt_category", "general")].append(c)
 
         per_category: dict[str, dict[str, Any]] = {}
         for cat, cat_comps in cat_groups.items():
