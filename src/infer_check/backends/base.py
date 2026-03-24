@@ -104,7 +104,7 @@ def get_backend_for_model(
     config = BackendConfig(
         backend_type=backend_type or resolved.backend,  # type: ignore
         model_id=resolved.model_id,
-        base_url=resolved.base_url,
+        base_url=base_url or resolved.base_url,
         quantization=quantization or resolved.label,
     )
 

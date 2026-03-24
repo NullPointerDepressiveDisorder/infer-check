@@ -408,7 +408,12 @@ def compare(
         flip_table.add_column("similarity", justify="right")
 
         for c in flipped:
-            prompt_text = c.baseline.text if hasattr(c.baseline, "text") else c.baseline.prompt_id
+            prompt_text = (
+                c.metadata.get("prompt_text")
+                or getattr(c.baseline, "prompt_id", None)
+                or getattr(c.baseline, "text", None)
+                or "???"
+            )
             # Truncate long prompt text for display.
             if len(prompt_text) > 47:
                 prompt_text = prompt_text[:47] + "..."

@@ -453,7 +453,7 @@ _HTML_TEMPLATE = """\
             <tr>
               <td><code>{{ cat }}</code></td>
               <td>{{ (stats.flip_rate * 100) | round(1) }}%</td>
-              <td>{{ (stats.mean_text_similarity * 100) | round(1) }}%</td>
+              <td>{{ (stats.mean_similarity * 100) | round(1) }}%</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -890,7 +890,12 @@ def _build_failure_cards(
         for comp in batch:
             if not comp.is_failure:
                 continue
-            category = comp.test.metadata.get("category", comp.baseline.metadata.get("category", "general"))
+            category = (
+                comp.metadata.get("category")
+                or comp.test.metadata.get("category")
+                or comp.baseline.metadata.get("category")
+                or "general"
+            )
             prompt_text = comp.baseline.metadata.get("prompt_text", "")
             prompt_text = comp.baseline.text[:200] if not prompt_text else str(prompt_text)[:200]
             if len(prompt_text) == 200:
