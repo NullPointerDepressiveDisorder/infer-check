@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -142,7 +143,8 @@ def sweep(
 
     # Persist results
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"sweep_{model_map[baseline_label].replace('/', '_')}_{backend}.json"
+    ts = int(result.timestamp.timestamp())
+    out_path = output / f"sweep_{model_map[baseline_label].replace('/', '_')}_{backend}_{ts}.json"
     result.save(out_path)
     console.print(f"[green]Results saved to {out_path}[/green]")
 
@@ -334,7 +336,8 @@ def compare(
 
     safe_a = sanitize_filename(resolved_a.label)
     safe_b = sanitize_filename(resolved_b.label)
-    out_path = output / f"compare_{safe_a}_vs_{safe_b}.json"
+    ts = int(compare_result.timestamp.timestamp())
+    out_path = output / f"compare_{safe_a}_vs_{safe_b}_{ts}.json"
     compare_result.save(out_path)
     console.print(f"[green]Results saved to {out_path}[/green]")
 
@@ -453,7 +456,8 @@ def compare(
     if report:
         from infer_check.reporting.html import generate_report
 
-        report_path = output / f"report_{safe_a}_vs_{safe_b}.html"
+        ts = int(compare_result.timestamp.timestamp())
+        report_path = output / f"report_{safe_a}_vs_{safe_b}_{ts}.html"
         generate_report(output, report_path)
         console.print(f"[green]HTML report generated at {report_path}[/green]")
     elif n > 0 and not flipped:
@@ -545,7 +549,8 @@ def diff(
 
     # Persist results
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"diff_{model.replace('/', '_')}.json"
+    ts = int(datetime.now(UTC).timestamp())
+    out_path = output / f"diff_{model.replace('/', '_')}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [c.model_dump(mode="json") for c in comparisons],
@@ -641,7 +646,8 @@ def stress(
     )
 
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"stress_{model.replace('/', '_')}_{backend}.json"
+    ts = int(datetime.now(UTC).timestamp())
+    out_path = output / f"stress_{model.replace('/', '_')}_{backend}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [r.model_dump(mode="json") for r in stress_results],
@@ -721,7 +727,8 @@ def determinism(
     )
 
     output.mkdir(parents=True, exist_ok=True)
-    out_path = output / f"determinism_{model.replace('/', '_')}_{backend}.json"
+    ts = int(datetime.now(UTC).timestamp())
+    out_path = output / f"determinism_{model.replace('/', '_')}_{backend}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [r.model_dump(mode="json") for r in det_results],
