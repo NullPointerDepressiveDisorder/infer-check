@@ -1,11 +1,11 @@
 #:schema https://json.schemastore.org/pyproject.json
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "infer-check"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Correctness and reliability testing for LLM inference engines"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -48,6 +48,9 @@ Repository = "https://github.com/nullpointerdepressivedisorder/infer-check"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/infer_check"]
+
+[tool.hatch.version]
+source = "vcs"
 
 [dependency-groups]
 dev = [
