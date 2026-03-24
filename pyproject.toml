@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "infer-check"
-version = "0.1.1.1"
+version = "0.2.0"
 description = "Correctness and reliability testing for LLM inference engines"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 authors = [{ name = "Karan Kunal Mohindroo", email = "karan@karankm.com" }]
 keywords = ["llm", "testing", "correctness", "reliability", "quantization"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Testing",
 ]

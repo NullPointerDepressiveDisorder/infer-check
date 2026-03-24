@@ -109,10 +109,10 @@ class DeterminismResult(BaseInferModel):
 
 
 class CompareResult(BaseInferModel):
-    """Result of comparing two quantizations of the same model."""
+    """Result of comparing two inference configurations (e.g., models, backends, or quantizations)."""
 
-    model_a: str  # label or repo ID for model A
-    model_b: str  # label or repo ID for model B
+    model_a: str  # label or repo ID for configuration A (e.g., model or run variant)
+    model_b: str  # label or repo ID for configuration B (e.g., model or run variant)
     backend_a: str
     backend_b: str
     comparisons: list[ComparisonResult]

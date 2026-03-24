@@ -148,7 +148,11 @@ def sweep(
         backend_name = backend
     else:
         baseline_backend = backend_map.get(baseline_label)
-        backend_name = type(baseline_backend).__name__ if baseline_backend is not None else "unknown"
+        if baseline_backend is None:
+            backend_name = "unknown"
+        else:
+            # Prefer an explicit backend adapter name, fall back to the class name
+            backend_name = getattr(baseline_backend, "name", type(baseline_backend).__name__)
     ts = int(result.timestamp.timestamp())
     out_path = output / f"sweep_{model_map[baseline_label].replace('/', '_')}_{backend_name}_{ts}.json"
     result.save(out_path)
