@@ -229,6 +229,8 @@ class MLXBackend:
                 if hasattr(mx, "topk"):
                     # mx.topk is the most efficient way to get top-K if available.
                     top_k_values, top_k_indices = mx.topk(logprob_dist, effective_top_k)
+                    dist_list = cast(list[float], top_k_values.tolist())
+                    dist_indices = cast(list[int], top_k_indices.tolist())
                 elif hasattr(mx, "argpartition"):
                     # Fallback to argpartition which is often available in newer MLX.
                     top_k_indices = mx.argpartition(-logprob_dist, effective_top_k - 1)[:effective_top_k]
@@ -238,6 +240,9 @@ class MLXBackend:
                     sort_idx = mx.argsort(-top_k_values)
                     top_k_indices = top_k_indices[sort_idx]
                     top_k_values = top_k_values[sort_idx]
+
+                    dist_list = cast(list[float], top_k_values.tolist())
+                    dist_indices = cast(list[int], top_k_indices.tolist())
                 else:
                     # CPU/Numpy fallback if MLX lacks both topk and argpartition.
                     import numpy as np

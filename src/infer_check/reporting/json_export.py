@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from infer_check.types import (
+    CompareResult,
     ComparisonResult,
     DeterminismResult,
     StressResult,
@@ -25,6 +26,16 @@ from infer_check.types import (
 __all__ = ["export"]
 
 _UNKNOWN_VERSION = "unknown"
+
+
+def _try_load_compare(data: Any) -> CompareResult | None:
+    """Attempt to parse *data* as a ``CompareResult``."""
+    try:
+        if isinstance(data, dict):
+            return CompareResult.model_validate(data)
+    except Exception:
+        pass
+    return None
 
 
 def _try_load_sweep(data: Any) -> SweepResult | None:
@@ -96,14 +107,20 @@ def _classify_file(path: Path) -> tuple[str, Any] | None:
     Returns:
         A ``(section_name, parsed_object)`` tuple, or ``None`` if the file
         cannot be parsed as any known result type.  The *section_name* is one
-        of ``"sweep"``, ``"diff"``, ``"stress"``, or ``"determinism"``.
+        of ``"sweep"``, ``"diff"``, ``"stress"``, ``"determinism"``, or
+        ``"compare"``.
     """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
 
-    # Try SweepResult first (contains 'comparisons' key as a list).
+    # Try CompareResult first (it's the new run type).
+    compare = _try_load_compare(raw)
+    if compare is not None:
+        return ("compare", compare)
+
+    # Try SweepResult (contains 'comparisons' key as a list).
     sweep = _try_load_sweep(raw)
     if sweep is not None:
         return ("sweep", sweep)
@@ -165,6 +182,7 @@ def export(results_dir: Path, output_path: Path) -> Path:
         "diff": [],
         "stress": [],
         "determinism": [],
+        "compare": [],
     }
 
     json_files = sorted(results_dir.rglob("*.json"))
@@ -199,12 +217,14 @@ def export(results_dir: Path, output_path: Path) -> Path:
         },
         "summary": {
             "sweep_count": len(sections["sweep"]),
+            "compare_count": len(sections["compare"]),
             "diff_batches": len(sections["diff"]),
             "stress_count": len(sections["stress"]),
             "determinism_count": len(sections["determinism"]),
             "total_files_scanned": len(json_files),
         },
         "sweep": [s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in sections["sweep"]],
+        "compare": [c.model_dump(mode="json") if hasattr(c, "model_dump") else c for c in sections["compare"]],
         "diff": [[c.model_dump(mode="json") for c in batch] for batch in sections["diff"]],
         "stress": [s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in sections["stress"]],
         "determinism": [d.model_dump(mode="json") if hasattr(d, "model_dump") else d for d in sections["determinism"]],

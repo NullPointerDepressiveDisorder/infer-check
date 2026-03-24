@@ -361,7 +361,10 @@ def compare(
     )
     if compare_result.mean_kl_divergence is not None:
         table.add_row("mean KL divergence", f"{compare_result.mean_kl_divergence:.6f}")
-    table.add_row("mean text similarity", f"{compare_result.mean_text_similarity:.4f}")
+    if compare_result.mean_text_similarity is not None:
+        table.add_row("mean text similarity", f"{compare_result.mean_text_similarity:.4f}")
+    else:
+        table.add_row("mean text similarity", "N/A")
     table.add_row(
         "identical / minor / moderate / severe",
         f"{severities['identical']} / {severities['minor']} / "
