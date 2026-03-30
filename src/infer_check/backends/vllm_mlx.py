@@ -20,7 +20,7 @@ class VLLMMLXBackend(OpenAICompatBackend):
     def __init__(
         self,
         model_id: str,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://127.0.0.1:8000",
         api_key: str | None = None,
         chat: bool = False,
     ) -> None:
@@ -53,7 +53,7 @@ class VLLMMLXBackend(OpenAICompatBackend):
         cls,
         model_id: str,
         quantization: str | None = None,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://127.0.0.1:8000",
     ) -> VLLMMLXBackend:
         """Create a backend for *model_id*.
 
@@ -70,7 +70,7 @@ class VLLMMLXBackend(OpenAICompatBackend):
         Args:
             model_id: HuggingFace model identifier.
             quantization: Optional quantization string (e.g. ``"4bit"``).
-            base_url: Server URL (default ``http://localhost:8000``).
+            base_url: Server URL (default ``http://127.0.0.1:8000``).
 
         Returns:
             A configured :class:`VLLMMLXBackend` instance.

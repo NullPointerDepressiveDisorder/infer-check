@@ -9,13 +9,13 @@ from infer_check.types import Prompt
 
 
 def test_generate_chat_success() -> None:
-    backend = OpenAICompatBackend(base_url="http://localhost:8000", model_id="dummy", chat=True)
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8000", model_id="dummy", chat=True)
     prompt = Prompt(id="p1", text="Hello", max_tokens=10)
 
     mock_response = httpx.Response(
         200,
         json={"choices": [{"message": {"content": "world"}}], "usage": {"completion_tokens": 1}},
-        request=httpx.Request("POST", "http://localhost:8000/v1/chat/completions"),
+        request=httpx.Request("POST", "http://127.0.0.1:8000/v1/chat/completions"),
     )
 
     with patch("httpx.AsyncClient.post", return_value=mock_response):
@@ -26,7 +26,7 @@ def test_generate_chat_success() -> None:
 
 
 def test_generate_chat_connection_refused() -> None:
-    backend = OpenAICompatBackend(base_url="http://localhost:8000", model_id="dummy", chat=True)
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8000", model_id="dummy", chat=True)
     prompt = Prompt(id="p1", text="Hello", max_tokens=10)
 
     with patch("httpx.AsyncClient.post", side_effect=httpx.ConnectError("Connection refused")):
@@ -36,7 +36,7 @@ def test_generate_chat_connection_refused() -> None:
 
 
 def test_generate_chat_timeout() -> None:
-    backend = OpenAICompatBackend(base_url="http://localhost:8000", model_id="dummy", chat=True)
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8000", model_id="dummy", chat=True)
     prompt = Prompt(id="p1", text="Hello", max_tokens=10)
 
     with patch("httpx.AsyncClient.post", side_effect=httpx.TimeoutException("Timeout")):
@@ -46,10 +46,10 @@ def test_generate_chat_timeout() -> None:
 
 
 def test_generate_completions_404() -> None:
-    backend = OpenAICompatBackend(base_url="http://localhost:8000", model_id="dummy", chat=False)
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8000", model_id="dummy", chat=False)
     prompt = Prompt(id="p1", text="Hello", max_tokens=10)
 
-    mock_response = httpx.Response(404, request=httpx.Request("POST", "http://localhost:8000/v1/completions"))
+    mock_response = httpx.Response(404, request=httpx.Request("POST", "http://127.0.0.1:8000/v1/completions"))
     with patch(
         "httpx.AsyncClient.post",
         side_effect=httpx.HTTPStatusError("404 Not Found", request=mock_response.request, response=mock_response),
@@ -60,13 +60,13 @@ def test_generate_completions_404() -> None:
 
 
 def test_generate_chat_malformed_json() -> None:
-    backend = OpenAICompatBackend(base_url="http://localhost:8000", model_id="dummy", chat=True)
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8000", model_id="dummy", chat=True)
     prompt = Prompt(id="p1", text="Hello", max_tokens=10)
 
     mock_response = httpx.Response(
         200,
         text="Not valid JSON",
-        request=httpx.Request("POST", "http://localhost:8000/v1/chat/completions"),
+        request=httpx.Request("POST", "http://127.0.0.1:8000/v1/chat/completions"),
     )
     with patch("httpx.AsyncClient.post", return_value=mock_response):
         with pytest.raises(RuntimeError) as exc:
@@ -75,13 +75,13 @@ def test_generate_chat_malformed_json() -> None:
 
 
 def test_generate_empty_choices() -> None:
-    backend = OpenAICompatBackend(base_url="http://localhost:8000", model_id="dummy", chat=True)
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8000", model_id="dummy", chat=True)
     prompt = Prompt(id="p1", text="Hello", max_tokens=10)
 
     mock_response = httpx.Response(
         200,
         json={"choices": []},
-        request=httpx.Request("POST", "http://localhost:8000/v1/chat/completions"),
+        request=httpx.Request("POST", "http://127.0.0.1:8000/v1/chat/completions"),
     )
     with patch("httpx.AsyncClient.post", return_value=mock_response):
         with pytest.raises(RuntimeError) as exc:

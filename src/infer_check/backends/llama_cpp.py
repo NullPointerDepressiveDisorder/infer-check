@@ -19,7 +19,8 @@ class LlamaCppBackend:
     Communicates via the ``/completion`` endpoint.
     """
 
-    def __init__(self, base_url: str = "http://localhost:8080") -> None:
+    def __init__(self, model_id: str, base_url: str = "http://127.0.0.1:8080") -> None:
+        self._model_id = model_id
         self._base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(base_url=self._base_url, timeout=120.0)
 
@@ -34,6 +35,7 @@ class LlamaCppBackend:
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Send a completion request and parse the response."""
         payload = {
+            "model": self._model_id,
             "prompt": prompt.text,
             "n_predict": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
@@ -45,10 +47,16 @@ class LlamaCppBackend:
             response = await self._client.post("/completion", json=payload)
             response.raise_for_status()
         except httpx.ConnectError as exc:
+            # On Windows, localhost often resolves to IPv6 [::1] which many servers don't bind to.
+            # Using 127.0.0.1 (IPv4) is generally more reliable for local connections.
+            extra_hint = ""
+            if "localhost" in self._base_url:
+                extra_hint = "\nHint: Try using 127.0.0.1 instead of localhost on Windows."
+
             raise RuntimeError(
                 f"Cannot connect to llama-server at {self._base_url}. "
-                "Start it with: llama-server -m <model.gguf> --port 8080\n"
-                "Or use Ollama: ollama serve"
+                f"Start it with: llama-server -m <model.gguf> --port 8080\n"
+                f"Or use Ollama: ollama serve{extra_hint}"
             ) from exc
         except httpx.TimeoutException as exc:
             raise RuntimeError(

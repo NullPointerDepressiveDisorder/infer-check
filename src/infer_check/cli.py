@@ -96,7 +96,7 @@ def sweep(
         entry = entry.strip()
         if "=" in entry:
             label, path = entry.split("=", 1)
-            model_map[label.strip()] = path.strip()
+            model_map[label.strip()] = path.strip().lstrip("=").strip()
         else:
             # No label provided — use the last path component as label
             label = entry.strip().rsplit("/", 1)[-1]

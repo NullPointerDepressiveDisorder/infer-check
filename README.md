@@ -106,7 +106,7 @@ Same model, same quant, different inference paths. Catches serving-layer bugs.
 infer-check diff \
   --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit \
   --backends "mlx-lm,openai-compat" \
-  --base-urls ",http://localhost:8000" \
+  --base-urls ",http://127.0.0.1:8000" \
   --prompts reasoning \
   --output ./results/diff/
 ```
@@ -134,7 +134,7 @@ Concurrent requests through a serving backend. Tests KV cache correctness under 
 infer-check stress \
   --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit \
   --backend openai-compat \
-  --base-url http://localhost:8000 \
+  --base-url http://127.0.0.1:8000 \
   --prompts reasoning \
   --concurrency 1,2,4,8 \
   --output ./results/stress/
