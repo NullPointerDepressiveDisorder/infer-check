@@ -124,7 +124,7 @@ class LlamaCppBackend:
         return InferenceResult(
             prompt_id=prompt.id,
             backend_name=self.name,
-            model_id=data.get("model", "unknown"),
+            model_id=data.get("model", self._model_id),
             tokens=tokens,
             logprobs=logprobs,
             distributions=distributions,

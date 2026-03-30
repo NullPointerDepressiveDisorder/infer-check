@@ -20,21 +20,24 @@ async def test_llama_cpp_includes_model_in_payload() -> None:
         request=httpx.Request("POST", "http://127.0.0.1:8080/completion"),
     )
 
-    with patch("httpx.AsyncClient.post", return_value=mock_response) as mock_post:
-        res = await backend.generate(prompt)
+    try:
+        with patch("httpx.AsyncClient.post", return_value=mock_response) as mock_post:
+            res = await backend.generate(prompt)
 
-        # Verify the call to post
-        assert mock_post.called
-        args, kwargs = mock_post.call_args
-        assert args[0] == "/completion"
-        payload = kwargs["json"]
-        assert payload["model"] == model_id
-        assert payload["prompt"] == "Hello"
-        assert payload["n_predict"] == 10
+            # Verify the call to post
+            assert mock_post.called
+            args, kwargs = mock_post.call_args
+            assert args[0] == "/completion"
+            payload = kwargs["json"]
+            assert payload["model"] == model_id
+            assert payload["prompt"] == "Hello"
+            assert payload["n_predict"] == 10
 
-        # Verify result
-        assert res.text == " world"
-        assert res.model_id == model_id
+            # Verify result
+            assert res.text == " world"
+            assert res.model_id == model_id
+    finally:
+        await backend.cleanup()
 
 
 if __name__ == "__main__":

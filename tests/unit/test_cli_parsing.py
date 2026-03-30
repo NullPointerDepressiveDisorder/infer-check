@@ -33,7 +33,11 @@ def test_sweep_model_parsing_robustness() -> None:
 
         runner = CliRunner()
         # Using a subset of arguments to trigger the parsing logic
-        runner.invoke(main, ["sweep", "--models", "bf16==bartowski/Qwen,4bit=bartowski/Qwen", "--prompts", "reasoning"])
+        with runner.isolated_filesystem():
+            result = runner.invoke(
+                main, ["sweep", "--models", "bf16==bartowski/Qwen,4bit=bartowski/Qwen", "--prompts", "reasoning"]
+            )
+        assert result.exit_code == 0, result.output
 
         # Check if get_backend_for_model was called with cleaned paths
         # It should be called twice: once for bf16 and once for 4bit
