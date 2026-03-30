@@ -8,29 +8,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
+          enable-cache: 'true'
           activate-environment: "true"
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv pip install -e .[dev]
+        run: uv sync --all-extras --dev
 
       - name: Run tests with coverage
-        run: uv run pytest --cov=src --cov-branch --cov-report=xml
+        run: uv run pytest --cov=src --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
 
       - name: Run Mypy
         run: uv run mypy src --cobertura-xml-report mypy_report
 
-      - name: Upload coverage to Codecov
+      - name: Upload coverage
         uses: codecov/codecov-action@v5
+        if: "!cancelled()"
         with:
-          files: ./coverage.xml, ./mypy_report/cobertura.xml
-          flags: pytest,mypy
+          files: ./coverage.xml,./mypy_report/cobertura.xml
+          flags: pytest, mypy
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: ${{ github.repository }}
+          fail_ci_if_error: 'true'
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./junit.xml
+          report-type: test_results
+          slug: ${{ github.repository }}
+          fail_ci_if_error: 'true'
+          token: ${{ secrets.CODECOV_TOKEN }}
