@@ -20,8 +20,11 @@ async def test_llama_cpp_model_id_fallback() -> None:
         request=httpx.Request("POST", "http://127.0.0.1:8080/completion"),
     )
 
-    with patch("httpx.AsyncClient.post", return_value=mock_response):
-        res = await backend.generate(prompt)
+    try:
+        with patch("httpx.AsyncClient.post", return_value=mock_response):
+            res = await backend.generate(prompt)
 
-        # Verify it falls back to backend's model_id instead of "unknown"
-        assert res.model_id == model_id
+            # Verify it falls back to backend's model_id instead of "unknown"
+            assert res.model_id == model_id
+    finally:
+        await backend.cleanup()

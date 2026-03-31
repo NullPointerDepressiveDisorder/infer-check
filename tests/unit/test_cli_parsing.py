@@ -25,6 +25,7 @@ def test_sweep_model_parsing_robustness() -> None:
         patch("infer_check.cli._resolve_prompts", return_value=Path("dummy.jsonl")),
         patch("asyncio.run", return_value=mock_sweep_result),
     ):
+        mock_get_backend.return_value.name = "test-backend"
         # Simulating the command: infer-check sweep --models "bf16==path/to/model" --prompts dummy
         # We call the function directly as click command
         from click.testing import CliRunner

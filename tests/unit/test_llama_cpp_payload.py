@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import patch
 
 import httpx
@@ -38,7 +37,3 @@ async def test_llama_cpp_includes_model_in_payload() -> None:
             assert res.model_id == model_id
     finally:
         await backend.cleanup()
-
-
-if __name__ == "__main__":
-    asyncio.run(test_llama_cpp_includes_model_in_payload())
