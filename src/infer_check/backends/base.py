@@ -57,12 +57,12 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
     elif config.backend_type == "llama-cpp":
         from infer_check.backends.llama_cpp import LlamaCppBackend
 
-        url = config.base_url or "http://localhost:8080"
-        return LlamaCppBackend(base_url=url)
+        url = config.base_url or "http://127.0.0.1:8080"
+        return LlamaCppBackend(model_id=config.model_id, base_url=url)
     elif config.backend_type == "vllm-mlx":
         from infer_check.backends.vllm_mlx import VLLMMLXBackend
 
-        url = config.base_url or "http://localhost:8000"
+        url = config.base_url or "http://127.0.0.1:8000"
         return VLLMMLXBackend(
             model_id=config.model_id,
             base_url=url,
@@ -73,7 +73,7 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
 
         if not config.base_url:
             raise ValueError(
-                "openai-compat backend requires --base-url. Example: --base-url http://localhost:11434/v1 (Ollama)"
+                "openai-compat backend requires --base-url. Example: --base-url http://127.0.0.1:11434/v1 (Ollama)"
             )
         return OpenAICompatBackend(
             base_url=config.base_url,

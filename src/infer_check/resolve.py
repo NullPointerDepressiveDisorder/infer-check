@@ -9,7 +9,7 @@ Resolution rules (in order):
   3. Explicit prefix  — ``gguf:/path/to/model.gguf`` → llama-cpp
   4. Local .gguf file — path exists and ends with ``.gguf`` → llama-cpp
   5. HF repo with ``-mlx`` or ``mlx-community/`` → mlx-lm
-  6. HF repo with ``-GGUF`` or ``-gguf`` → llama-cpp (default: http://localhost:8080)
+  6. HF repo with ``-GGUF`` or ``-gguf`` → llama-cpp (default: http://127.0.0.1:8080)
   7. Fallback — assume mlx-lm (most common local Mac use case)
 """
 
@@ -34,9 +34,9 @@ _PREFIX_MAP: dict[str, BackendType] = {
 
 # Default base URLs per backend (can be overridden via CLI).
 _DEFAULT_URLS: dict[BackendType, str] = {
-    "openai-compat": "http://localhost:11434/v1",  # Ollama
-    "llama-cpp": "http://localhost:8080",
-    "vllm-mlx": "http://localhost:8000",
+    "openai-compat": "http://127.0.0.1:11434/v1",  # Ollama
+    "llama-cpp": "http://127.0.0.1:8080",
+    "vllm-mlx": "http://127.0.0.1:8000",
 }
 
 
