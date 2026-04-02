@@ -72,6 +72,55 @@ def test_kl_alignment_llama_cpp() -> None:
     assert result.kl_divergence > 0
 
 
+def test_kl_alignment_llama_cpp_rank_index() -> None:
+    """Test KL computation for top-K aligned distributions using rank index from key name (id_N).
+
+    This test asserts that it's the rank index 'N' in 'id_N' that matters,
+    not the iteration order or the index in metadata dictionary.
+    """
+    import numpy as np
+
+    runner = TestRunner()
+
+    # Case: id_0 and id_1 are swapped in the metadata dictionary,
+    # but the distributions are [prob_of_id_0, prob_of_id_1].
+    # If the logic incorrectly uses the order in which keys are processed,
+    # it might swap the probabilities.
+
+    baseline = InferenceResult(
+        prompt_id="p1",
+        backend_name="b1",
+        model_id="m1",
+        text="hi",
+        tokens=["h"],
+        distributions=[[0.8, 0.2]],
+        # Swapped order in dict
+        distribution_metadata=[{"id_1": 11, "id_0": 10}],
+        latency_ms=10.0,
+    )
+
+    test = InferenceResult(
+        prompt_id="p1",
+        backend_name="b2",
+        model_id="m1",
+        text="hi",
+        tokens=["h"],
+        distributions=[[0.7, 0.3]],
+        # Normal order
+        distribution_metadata=[{"id_0": 10, "id_1": 11}],
+        latency_ms=10.0,
+    )
+
+    result = runner._compare(baseline, test)
+    assert result.kl_divergence is not None
+
+    expected_p = np.array([0.8, 0.2])
+    expected_q = np.array([0.7, 0.3])
+    expected_kl = np.sum(expected_p * np.log(expected_p / expected_q))
+
+    assert np.isclose(result.kl_divergence, expected_kl, atol=1e-5)
+
+
 def test_kl_skips_unaligned() -> None:
     """Ensure KL is None if distributions cannot be aligned."""
     runner = TestRunner()
