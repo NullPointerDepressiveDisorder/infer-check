@@ -47,9 +47,9 @@ class MLXBackend:
         try:
             return self._generate_with_logprobs(prompt)
         except Exception as exc:
-            import logging
+            from rich.console import Console
 
-            logging.debug("generate_step failed (%s), falling back to simple generate", exc)
+            Console().print(f"[yellow]⚠ generate_step failed, falling back to simple generate: {exc}[/yellow]")
             try:
                 return self._generate_simple(prompt)
             except Exception as inner:
@@ -184,7 +184,7 @@ class MLXBackend:
         temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
         sampler = make_sampler(temp=temp)
         formatted = self._format_prompt(prompt.text)
-        input_ids = self._tokenizer.encode(formatted, return_tensors="mlx")
+        input_ids = mx.array(self._tokenizer.encode(formatted))
 
         # Configurable top-K to avoid memory explosion. Default to 10.
         top_k = prompt.metadata.get("top_k_logprobs", 10) if prompt.metadata else 10
@@ -225,13 +225,7 @@ class MLXBackend:
                 if effective_top_k > vocab_size:
                     effective_top_k = vocab_size
 
-                # Get top-K indices and values
-                if hasattr(mx, "topk"):
-                    # mx.topk is the most efficient way to get top-K if available.
-                    top_k_values, top_k_indices = mx.topk(logprob_dist, effective_top_k)
-                    dist_list = cast(list[float], top_k_values.tolist())
-                    dist_indices = cast(list[int], top_k_indices.tolist())
-                elif hasattr(mx, "argpartition"):
+                if hasattr(mx, "argpartition"):
                     # Fallback to argpartition which is often available in newer MLX.
                     top_k_indices = mx.argpartition(-logprob_dist, effective_top_k - 1)[:effective_top_k]
                     top_k_values = logprob_dist[top_k_indices]
@@ -264,7 +258,7 @@ class MLXBackend:
                     meta[f"id_{i}"] = int(idx)
                 distribution_metadata.append(meta)
 
-            token_id = int(token.item())
+            token_id = int(token)
             token_str = self._tokenizer.decode([token_id])
             tokens.append(token_str)
 

@@ -124,8 +124,8 @@ class TestRunner:
                 # llama-server: id_0, id_1, ... (top-K)
                 elif b_meta and t_meta and "id_0" in b_meta and "id_0" in t_meta:
                     # Align on union of token IDs (can be int IDs or token strings)
-                    b_ids = {v: i for k, v in b_meta.items() if k.startswith("id_")}
-                    t_ids = {v: i for k, v in t_meta.items() if k.startswith("id_")}
+                    b_ids = {v: int(k.split("_")[1]) for k, v in b_meta.items() if k.startswith("id_")}
+                    t_ids = {v: int(k.split("_")[1]) for k, v in t_meta.items() if k.startswith("id_")}
 
                     # Skip if ID types are different (e.g. int vs str)
                     b_id_types = {type(v) for v in b_ids}

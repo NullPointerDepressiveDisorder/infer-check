@@ -67,3 +67,69 @@ def test_mlx_cleanup(mock_mlx: tuple[MagicMock, MagicMock, MagicMock]) -> None:
     asyncio.run(backend.cleanup())
     assert backend._model is None
     assert backend._tokenizer is None
+
+
+@pytest.mark.asyncio
+async def test_mlx_generate_fallback(mock_mlx: tuple[MagicMock, MagicMock, MagicMock]) -> None:
+    from unittest.mock import patch
+
+    from infer_check.types import InferenceResult, Prompt
+
+    backend = MLXBackend(model_id="dummy-model")
+    backend._model = mock_mlx[1]
+    backend._tokenizer = mock_mlx[2]
+
+    prompt = Prompt(text="test prompt")
+    simple_result = InferenceResult(
+        prompt_id=prompt.id,
+        backend_name="mlx-lm",
+        model_id="dummy-model",
+        tokens=["hello"],
+        text="hello",
+        latency_ms=10.0,
+    )
+
+    with (
+        patch.object(MLXBackend, "_generate_with_logprobs") as mock_logprobs,
+        patch.object(MLXBackend, "_generate_simple") as mock_simple,
+        patch("rich.console.Console.print") as mock_print,
+    ):
+        mock_logprobs.side_effect = Exception("Logprobs failed")
+        mock_simple.return_value = simple_result
+
+        result = await backend.generate(prompt)
+
+        assert result == simple_result
+        mock_logprobs.assert_called_once_with(prompt)
+        mock_simple.assert_called_once_with(prompt)
+        mock_print.assert_called_once()
+        args, _ = mock_print.call_args
+        assert "generate_step failed, falling back to simple generate" in args[0]
+        assert "Logprobs failed" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_mlx_generate_double_failure(mock_mlx: tuple[MagicMock, MagicMock, MagicMock]) -> None:
+    from unittest.mock import patch
+
+    from infer_check.types import Prompt
+
+    backend = MLXBackend(model_id="dummy-model")
+    backend._model = mock_mlx[1]
+    backend._tokenizer = mock_mlx[2]
+
+    prompt = Prompt(text="test prompt")
+
+    with (
+        patch.object(MLXBackend, "_generate_with_logprobs") as mock_logprobs,
+        patch.object(MLXBackend, "_generate_simple") as mock_simple,
+        patch("rich.console.Console.print"),
+    ):
+        mock_logprobs.side_effect = Exception("Logprobs failed")
+        mock_simple.side_effect = Exception("Simple failed")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await backend.generate(prompt)
+
+        assert "MLX generation failed" in str(exc_info.value)
+        assert "Simple failed" in str(exc_info.value)
