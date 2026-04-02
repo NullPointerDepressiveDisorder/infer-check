@@ -225,9 +225,6 @@ class MLXBackend:
                 if effective_top_k > vocab_size:
                     effective_top_k = vocab_size
 
-                # Get top-K indices and values.
-                # NOTE: mx.topk returns values only (no indices), unlike torch.topk,
-                # so we use argpartition which gives us both.
                 if hasattr(mx, "argpartition"):
                     # Fallback to argpartition which is often available in newer MLX.
                     top_k_indices = mx.argpartition(-logprob_dist, effective_top_k - 1)[:effective_top_k]
