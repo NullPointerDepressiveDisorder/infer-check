@@ -129,9 +129,13 @@ def sweep(
         tag = " (baseline)" if label == baseline_label else ""
         console.print(f"  {label}: {path}{tag}")
     prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens
+    # Apply global max_tokens only when a prompt did not explicitly set its own.
     for p in prompt_list:
-        p.max_tokens = ctx.obj["max_tokens"]
+        fields_set = getattr(p, "model_fields_set", None)
+        if fields_set is None:
+            fields_set = getattr(p, "__pydantic_fields_set__", set())
+        if "max_tokens" not in fields_set:
+            p.max_tokens = ctx.obj["max_tokens"]
 
     # Build a separate backend for each model
     backend_map: dict[str, Any] = {}
@@ -320,9 +324,10 @@ def compare(
     )
 
     prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens
+    # Apply global max_tokens only when the suite did not set one.
     for p in prompt_list:
-        p.max_tokens = ctx.obj["max_tokens"]
+        if getattr(p, "max_tokens", None) is None:
+            p.max_tokens = ctx.obj["max_tokens"]
 
     console.print(f"  prompts: {len(prompt_list)} from '{prompts}'")
 
@@ -554,9 +559,10 @@ def diff(
     console.print(f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}")
 
     prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens
+    # Apply global max_tokens only when the prompt does not already specify one.
     for p in prompt_list:
-        p.max_tokens = ctx.obj["max_tokens"]
+        if getattr(p, "max_tokens", None) is None:
+            p.max_tokens = ctx.obj["max_tokens"]
 
     backend_instances = []
     for name, url in zip(backend_names, url_list, strict=True):
@@ -671,9 +677,10 @@ def stress(
     )
 
     prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens
+    # Apply global max_tokens only to prompts that do not already specify one.
     for p in prompt_list:
-        p.max_tokens = ctx.obj["max_tokens"]
+        if p.max_tokens is None:
+            p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
     stress_results = asyncio.run(
@@ -757,9 +764,10 @@ def determinism(
     console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")
 
     prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens
+    # Apply global max_tokens only when a prompt does not define its own value.
     for p in prompt_list:
-        p.max_tokens = ctx.obj["max_tokens"]
+        if getattr(p, "max_tokens", None) is None:
+            p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
     det_results = asyncio.run(
