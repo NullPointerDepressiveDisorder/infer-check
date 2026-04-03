@@ -27,8 +27,17 @@ def _resolve_prompts(prompts: str) -> Path:
 
 @click.group()
 @click.version_option(package_name="infer-check")
-def main() -> None:
+@click.option(
+    "--max-tokens",
+    default=1024,
+    show_default=True,
+    help="Default max tokens for generation (applies to all prompts unless they specify their own).",
+)
+@click.pass_context
+def main(ctx: click.Context, max_tokens: int) -> None:
     """infer-check: correctness and reliability testing for LLM inference engines."""
+    ctx.ensure_object(dict)
+    ctx.obj["max_tokens"] = max_tokens
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +74,9 @@ def main() -> None:
     help="Baseline label (defaults to first in --models).",
 )
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
+@click.pass_context
 def sweep(
+    ctx: click.Context,
     models: str,
     backend: str | None,
     prompts: str,
@@ -117,8 +128,10 @@ def sweep(
     for label, path in model_map.items():
         tag = " (baseline)" if label == baseline_label else ""
         console.print(f"  {label}: {path}{tag}")
-
     prompt_list = load_suite(_resolve_prompts(prompts))
+    # Apply global max_tokens
+    for p in prompt_list:
+        p.max_tokens = ctx.obj["max_tokens"]
 
     # Build a separate backend for each model
     backend_map: dict[str, Any] = {}
@@ -257,7 +270,9 @@ def sweep(
     show_default=True,
     help="Generate an HTML comparison report after the run.",
 )
+@click.pass_context
 def compare(
+    ctx: click.Context,
     model_a: str,
     model_b: str,
     prompts: str,
@@ -305,6 +320,10 @@ def compare(
     )
 
     prompt_list = load_suite(_resolve_prompts(prompts))
+    # Apply global max_tokens
+    for p in prompt_list:
+        p.max_tokens = ctx.obj["max_tokens"]
+
     console.print(f"  prompts: {len(prompt_list)} from '{prompts}'")
 
     # ── Build backends ───────────────────────────────────────────────
@@ -510,7 +529,9 @@ def compare(
     show_default=True,
     help="Use /v1/chat/completions for HTTP backends (applies chat template server-side).",
 )
+@click.pass_context
 def diff(
+    ctx: click.Context,
     model: str,
     backends: str,
     prompts: str,
@@ -533,6 +554,9 @@ def diff(
     console.print(f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}")
 
     prompt_list = load_suite(_resolve_prompts(prompts))
+    # Apply global max_tokens
+    for p in prompt_list:
+        p.max_tokens = ctx.obj["max_tokens"]
 
     backend_instances = []
     for name, url in zip(backend_names, url_list, strict=True):
@@ -619,7 +643,9 @@ def diff(
     help="Comma-separated concurrency levels.",
 )
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
+@click.pass_context
 def stress(
+    ctx: click.Context,
     model: str,
     backend: str | None,
     prompts: str,
@@ -645,6 +671,9 @@ def stress(
     )
 
     prompt_list = load_suite(_resolve_prompts(prompts))
+    # Apply global max_tokens
+    for p in prompt_list:
+        p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
     stress_results = asyncio.run(
@@ -704,7 +733,9 @@ def stress(
 )
 @click.option("--runs", default=100, show_default=True, type=int, help="Number of runs per prompt.")
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
+@click.pass_context
 def determinism(
+    ctx: click.Context,
     model: str,
     backend: str | None,
     prompts: str,
@@ -726,6 +757,9 @@ def determinism(
     console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")
 
     prompt_list = load_suite(_resolve_prompts(prompts))
+    # Apply global max_tokens
+    for p in prompt_list:
+        p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
     det_results = asyncio.run(

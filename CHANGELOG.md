@@ -1,3 +1,8 @@
+# 0.2.0 (2026-04-02)
+
+- Added global `--max-tokens` flag (defaults to 1024) to the main CLI.
+- Increased default `max_tokens` for all prompts from 256 to 1024.
+
 # 0.1.0 (2026-03-11)
 
 - Initial release
