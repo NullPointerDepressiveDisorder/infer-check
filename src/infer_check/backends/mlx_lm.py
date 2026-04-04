@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import gc
 import time
 from typing import Any, cast
@@ -85,7 +86,7 @@ class MLXBackend:
         """Release model references and trigger garbage collection."""
         self._model = None
         self._tokenizer = None
-        gc.collect()
+        await asyncio.to_thread(gc.collect)
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -87,3 +87,39 @@ def test_generate_empty_choices() -> None:
         with pytest.raises(RuntimeError) as exc:
             asyncio.run(backend.generate(prompt))
         assert "empty or malformed response" in str(exc.value)
+
+
+def test_generate_chat_reasoning_fallback() -> None:
+    """Test fallback to message.reasoning_content when message.content is missing/empty."""
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8000", model_id="dummy", chat=True)
+    prompt = Prompt(id="p1", text="Hello", max_tokens=10)
+
+    # Content empty, reasoning_content present
+    mock_response = httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"content": "", "reasoning_content": "Thinking... world"}}],
+            "usage": {"completion_tokens": 2},
+        },
+        request=httpx.Request("POST", "http://127.0.0.1:8000/v1/chat/completions"),
+    )
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        res = asyncio.run(backend.generate(prompt))
+        assert res.text == "Thinking... world"
+        assert res.tokens == ["Thinking...", "world"]
+
+    # Content missing, reasoning_content present
+    mock_response = httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"reasoning_content": "Just thinking"}}],
+            "usage": {"completion_tokens": 2},
+        },
+        request=httpx.Request("POST", "http://127.0.0.1:8000/v1/chat/completions"),
+    )
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        res = asyncio.run(backend.generate(prompt))
+        assert res.text == "Just thinking"
+        assert res.tokens == ["Just", "thinking"]
