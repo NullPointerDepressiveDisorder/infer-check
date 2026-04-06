@@ -48,7 +48,7 @@ class Prompt(BaseInferModel):
     id: str = Field(default_factory=_generate_uuid)
     text: str
     category: str = "general"
-    max_tokens: int = 256
+    max_tokens: int = 1024
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

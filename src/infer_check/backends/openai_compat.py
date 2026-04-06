@@ -101,6 +101,8 @@ class OpenAICompatBackend:
         choice = data["choices"][0]
         message = choice.get("message", {})
         text: str = message.get("content", "")
+        if not text:
+            text = message.get("reasoning_content", "")
         tokens = text.split()
 
         usage = data.get("usage", {})

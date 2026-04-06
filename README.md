@@ -68,7 +68,7 @@ pip install "infer-check[mlx]"
 
 ### Quantization sweep
 
-Compare pre-quantized models against a baseline. Each model is a separate HuggingFace repo.
+Compare pre-quantized models against a baseline. Each model is a separate HuggingFace repo. Use `--max-tokens` to control generation length (defaults to 1024).
 
 ```
 infer-check sweep \
@@ -77,6 +77,7 @@ infer-check sweep \
             4bit=mlx-community/Meta-Llama-3.1-8B-Instruct-4bit" \
   --backend mlx-lm \
   --prompts reasoning \
+  --max-tokens 512 \
   --output ./results/sweep/
 ```
 
@@ -161,7 +162,7 @@ Curated prompts targeting known quantization failure modes:
 | `quant-sensitive.jsonl` | 20 | Multi-digit arithmetic, long CoT, precise syntax |
 | `determinism.jsonl` | 50 | High-entropy continuations for determinism testing |
 
-All suites ship with the package — no need to clone the repo. Custom suites are JSONL files with one object per line:
+All suites ship with the package — no need to clone the repo. Custom suites are JSONL files with one object per line (default `max_tokens` is 1024):
 
 ```json
 {"id": "custom-001", "text": "Your prompt here", "category": "math", "max_tokens": 512}
