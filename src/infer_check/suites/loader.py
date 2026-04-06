@@ -34,8 +34,6 @@ def load_suite(path: str | Path) -> list[Prompt]:
             try:
                 data = json.loads(line)
                 prompt = Prompt.model_validate(data)
-                # Keep track of which fields were explicitly set in the input JSONL
-                prompt.metadata["__fields_set__"] = set(data.keys())
                 prompts.append(prompt)
                 category_counts[prompt.category] += 1
             except json.JSONDecodeError as e:

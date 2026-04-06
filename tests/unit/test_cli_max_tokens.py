@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -16,10 +16,19 @@ def test_max_tokens_prompt_precedence() -> None:
         prompts = [{"text": "Override", "max_tokens": 123}, {"text": "Default"}]
         prompt_path.write_text("\n".join(json.dumps(p) for p in prompts), encoding="utf-8")
 
-        from infer_check.runner import TestRunner
+        from datetime import UTC, datetime
 
-        mock_result = MagicMock()
-        mock_result.__int__.return_value = 0
+        from infer_check.runner import TestRunner
+        from infer_check.types import SweepResult
+
+        mock_result = SweepResult(
+            model_id="m1",
+            backend_name="mlx",
+            quantization_levels=["a", "b"],
+            comparisons=[],
+            timestamp=datetime.now(UTC),
+            summary={},
+        )
 
         with (
             patch("infer_check.cli._resolve_prompts", return_value=prompt_path),
@@ -52,10 +61,19 @@ def test_max_tokens_propagation_override() -> None:
         prompt_path = Path("test_prompts.jsonl")
         prompt_path.write_text(json.dumps({"text": "Hello world"}), encoding="utf-8")
 
-        from infer_check.runner import TestRunner
+        from datetime import UTC, datetime
 
-        mock_result = MagicMock()
-        mock_result.timestamp.return_value = "2023-01-01"
+        from infer_check.runner import TestRunner
+        from infer_check.types import SweepResult
+
+        mock_result = SweepResult(
+            model_id="m1",
+            backend_name="mlx",
+            quantization_levels=["a", "b"],
+            comparisons=[],
+            timestamp=datetime.now(UTC),
+            summary={},
+        )
 
         with (
             patch("infer_check.cli._resolve_prompts", return_value=prompt_path),

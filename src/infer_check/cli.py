@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import click
 from rich.console import Console
@@ -15,8 +15,10 @@ from rich.table import Table
 
 console = Console()
 
+F = TypeVar("F", bound=Callable[..., Any])
 
-def common_options[F: Callable[..., Any]](f: F) -> F:
+
+def common_options(f: F) -> F:
     """Add common options to all subcommands."""
     options = [
         click.option(
@@ -153,7 +155,7 @@ def sweep(
     prompt_list = load_suite(_resolve_prompts(prompts))
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
     for p in prompt_list:
-        if "max_tokens" not in p.metadata.get("__fields_set__", set()):
+        if "max_tokens" not in p.model_fields_set:
             p.max_tokens = ctx.obj["max_tokens"]
 
     # Build a separate backend for each model
@@ -351,7 +353,7 @@ def compare(
     prompt_list = load_suite(_resolve_prompts(prompts))
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
     for p in prompt_list:
-        if "max_tokens" not in p.metadata.get("__fields_set__", set()):
+        if "max_tokens" not in p.model_fields_set:
             p.max_tokens = ctx.obj["max_tokens"]
 
     console.print(f"  prompts: {len(prompt_list)} from '{prompts}'")
@@ -592,7 +594,7 @@ def diff(
     prompt_list = load_suite(_resolve_prompts(prompts))
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
     for p in prompt_list:
-        if "max_tokens" not in p.metadata.get("__fields_set__", set()):
+        if "max_tokens" not in p.model_fields_set:
             p.max_tokens = ctx.obj["max_tokens"]
 
     backend_instances = []
@@ -716,7 +718,7 @@ def stress(
     prompt_list = load_suite(_resolve_prompts(prompts))
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
     for p in prompt_list:
-        if "max_tokens" not in p.metadata.get("__fields_set__", set()):
+        if "max_tokens" not in p.model_fields_set:
             p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
@@ -809,7 +811,7 @@ def determinism(
     prompt_list = load_suite(_resolve_prompts(prompts))
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
     for p in prompt_list:
-        if "max_tokens" not in p.metadata.get("__fields_set__", set()):
+        if "max_tokens" not in p.model_fields_set:
             p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
