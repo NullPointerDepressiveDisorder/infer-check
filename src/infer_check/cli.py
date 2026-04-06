@@ -24,7 +24,7 @@ def common_options(f: F) -> F:
         click.option(
             "--max-tokens",
             default=None,
-            type=int,
+            type=click.IntRange(min=1, clamp=True),
             help="Override default max tokens for generation.",
         ),
     ]

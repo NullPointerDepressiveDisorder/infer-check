@@ -76,7 +76,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
 "html.py" = ["E501"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
 strict = true
 
 [tool.pytest.ini_options]
