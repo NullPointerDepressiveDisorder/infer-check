@@ -28,3 +28,73 @@
 {"text": "How many microseconds are in 3 years, 7 months, and 12 days?", "category": "precision", "max_tokens": 512}
 {"text": "What is 1/998001? This produces an interesting decimal pattern.", "category": "precision", "max_tokens": 512}
 {"text": "Is 0.9999999999 (ten 9s) equal to 1? What about 0.999... (infinitely repeating)?", "category": "floating_point", "max_tokens": 256}
+{"text": "What is 999999999999999999 * 999999999999999999? Show the exact result.", "category": "large_numbers", "max_tokens": 256}
+{"text": "Compute 2^64. Is it 18446744073709551616?", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is 0.3 - 0.1 - 0.1 - 0.1? Is the result exactly 0?", "category": "floating_point", "max_tokens": 256}
+{"text": "Compute 123456789 * 987654321. Show your work.", "category": "carry_propagation", "max_tokens": 512}
+{"text": "What is the 50th Fibonacci number?", "category": "large_numbers", "max_tokens": 256}
+{"text": "Compute 1/49. What is the repeating decimal pattern?", "category": "precision", "max_tokens": 512}
+{"text": "What is (-1) * (-1) * (-1) * (-1) * (-1) * (-1) * (-1)?", "category": "sign_handling", "max_tokens": 256}
+{"text": "Compute 10^100 (a googol). How many zeros does it have? Now what is a googol + 1?", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is the result of 1e308 + 1e308 in IEEE 754 double precision?", "category": "overflow", "max_tokens": 256}
+{"text": "Compute 97 * 89. Now compute 89 * 97. Are they equal? Show both calculations.", "category": "carry_propagation", "max_tokens": 512}
+{"text": "What is 2^0.5 * 2^0.5? Is the result exactly 2?", "category": "floating_point", "max_tokens": 256}
+{"text": "Convert 0.1 (decimal) to binary. Is it a terminating or repeating binary fraction?", "category": "base_conversion", "max_tokens": 256}
+{"text": "What is the sum of all integers from 1 to 1000?", "category": "precision", "max_tokens": 256}
+{"text": "Compute (-2)^(-3). Express as a fraction and a decimal.", "category": "sign_handling", "max_tokens": 256}
+{"text": "What is 1e-16 + 1? Is the result exactly 1 in double precision?", "category": "catastrophic_cancellation", "max_tokens": 256}
+{"text": "What is 355/113? How close is this to π?", "category": "precision", "max_tokens": 256}
+{"text": "Compute 2^127 - 1. Is this number prime?", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is the square root of 2, to 25 decimal places?", "category": "precision", "max_tokens": 256}
+{"text": "Compute (10^15 + 1) - 10^15. What is the exact result?", "category": "catastrophic_cancellation", "max_tokens": 256}
+{"text": "What is 17^17? Give the exact integer.", "category": "large_numbers", "max_tokens": 256}
+{"text": "How many trailing zeros does 100! have?", "category": "precision", "max_tokens": 256}
+{"text": "Compute 1/81. What repeating pattern appears in the decimal expansion?", "category": "precision", "max_tokens": 512}
+{"text": "What is (-0.5)^(-0.5)? Express in simplest form.", "category": "edge_case", "max_tokens": 256}
+{"text": "Compute 2^10 * 3^5 * 7^2. Give the exact result.", "category": "precision", "max_tokens": 256}
+{"text": "What is the remainder when 10^100 is divided by 7?", "category": "modular_arithmetic", "max_tokens": 256}
+{"text": "Compute 0.1 + 0.2 + 0.3. Is this equal to 0.6? What about (0.1 + 0.2) + 0.3 vs 0.1 + (0.2 + 0.3)?", "category": "floating_point", "max_tokens": 256}
+{"text": "What is the value of 9^9^9 (right-associative, i.e. 9^(9^9))? How many digits does it have?", "category": "large_numbers", "max_tokens": 256}
+{"text": "Convert hexadecimal 0xDEADBEEF to decimal.", "category": "base_conversion", "max_tokens": 256}
+{"text": "What is 1/97? Give the first 20 decimal places.", "category": "precision", "max_tokens": 256}
+{"text": "Compute the determinant of the matrix [[1, 2, 3], [4, 5, 6], [7, 8, 9]].", "category": "precision", "max_tokens": 256}
+{"text": "What is the greatest common divisor of 123456789 and 987654321?", "category": "precision", "max_tokens": 256}
+{"text": "Compute 3.14159265 * 2.71828182. Show all decimal places of the result.", "category": "carry_propagation", "max_tokens": 512}
+{"text": "What is 2^(-1074) in IEEE 754? Is this the smallest positive subnormal double?", "category": "underflow", "max_tokens": 256}
+{"text": "Compute 1111111 * 1111111.", "category": "carry_propagation", "max_tokens": 256}
+{"text": "What is log base 2 of 1024? What about log base 2 of 1023?", "category": "precision", "max_tokens": 256}
+{"text": "Is 2^61 - 1 prime? What is its value?", "category": "large_numbers", "max_tokens": 256}
+{"text": "Compute 15! / (5! * 10!). What is this combinatorial number?", "category": "precision", "max_tokens": 256}
+{"text": "What is the 100th prime number?", "category": "precision", "max_tokens": 256}
+{"text": "Convert 255.255.255.0 from dotted decimal to a single 32-bit integer.", "category": "base_conversion", "max_tokens": 256}
+{"text": "What is the sum of 1/1! + 1/2! + 1/3! + ... + 1/10!? How close is this to e - 1?", "category": "precision", "max_tokens": 512}
+{"text": "Compute 7^7^7 mod 10. What is the last digit?", "category": "modular_arithmetic", "max_tokens": 256}
+{"text": "What is abs(-2147483648) in a 32-bit signed integer? Is there a problem?", "category": "overflow", "max_tokens": 256}
+{"text": "Multiply 0.333333333 by 3. Is the result 1 or 0.999999999?", "category": "floating_point", "max_tokens": 256}
+{"text": "Compute the cross product of vectors [1, 2, 3] and [4, 5, 6].", "category": "precision", "max_tokens": 256}
+{"text": "What is the binary representation of -128 in 8-bit two's complement?", "category": "base_conversion", "max_tokens": 256}
+{"text": "Compute 999 * 999 * 999. Show your work step by step.", "category": "carry_propagation", "max_tokens": 512}
+{"text": "What is the smallest positive number x such that x + 1 == 1 in IEEE 754 double precision?", "category": "floating_point", "max_tokens": 256}
+{"text": "Convert the fraction 22/7 to a decimal. How many digits are in the repeating block?", "category": "precision", "max_tokens": 256}
+{"text": "What is 10 / 3 * 3? Is it exactly 10?", "category": "floating_point", "max_tokens": 256}
+{"text": "Compute 2^256. This is the size of the SHA-256 output space. Give the exact number.", "category": "large_numbers", "max_tokens": 512}
+{"text": "What is (-2)^0.5? Is this a real or complex number?", "category": "edge_case", "max_tokens": 256}
+{"text": "Compute the dot product of [0.1, 0.2, 0.3] and [0.3, 0.2, 0.1]. Is the result exactly 0.10?", "category": "floating_point", "max_tokens": 256}
+{"text": "What is 1 divided by 0.0000001? Now what is 1 divided by 0.00000001? Multiply both results together.", "category": "precision", "max_tokens": 256}
+{"text": "Compute 12345679 * 63. What pattern appears?", "category": "carry_propagation", "max_tokens": 256}
+{"text": "What is the remainder when 2^100 is divided by 10?", "category": "modular_arithmetic", "max_tokens": 256}
+{"text": "Is 2^32 - 5 prime? What is the exact value of 2^32 - 5?", "category": "large_numbers", "max_tokens": 256}
+{"text": "Compute (sqrt(5) + 1) / 2 to 20 decimal places. What is this number called?", "category": "precision", "max_tokens": 256}
+{"text": "What is 127 in binary? What is 128 in binary? What is -128 in 8-bit signed binary?", "category": "base_conversion", "max_tokens": 256}
+{"text": "Compute 1 - 1/2 + 1/3 - 1/4 + 1/5 - 1/6 + 1/7 - 1/8 + 1/9 - 1/10. Express as a fraction.", "category": "precision", "max_tokens": 512}
+{"text": "What is the IEEE 754 representation of positive infinity? What is infinity * 0?", "category": "edge_case", "max_tokens": 256}
+{"text": "Compute 2.0^53 and 2.0^53 + 1 in double precision. Can you distinguish them?", "category": "floating_point", "max_tokens": 256}
+{"text": "What is the largest value representable in IEEE 754 single precision (32-bit float)?", "category": "overflow", "max_tokens": 256}
+{"text": "Compute 3^33. Give the exact integer.", "category": "large_numbers", "max_tokens": 256}
+{"text": "What is the sum of the first 100 odd numbers?", "category": "precision", "max_tokens": 256}
+{"text": "Convert octal 777 to decimal and to hexadecimal.", "category": "base_conversion", "max_tokens": 256}
+{"text": "What is (-3) mod 5? Is it -3, 2, or something else? Explain the convention.", "category": "modular_arithmetic", "max_tokens": 256}
+{"text": "Compute the Euclidean distance between points (3, 4, 0) and (0, 0, 0).", "category": "precision", "max_tokens": 256}
+{"text": "What is the exact decimal value of the 32-bit float with bits 0 10000000 10010010000111111011011?", "category": "floating_point", "max_tokens": 512}
+{"text": "Compute 99999^2. Show the exact result.", "category": "carry_propagation", "max_tokens": 256}
+{"text": "What is the value of 1/0.1 + 1/0.01 + 1/0.001? Is the result exactly 1110?", "category": "floating_point", "max_tokens": 256}

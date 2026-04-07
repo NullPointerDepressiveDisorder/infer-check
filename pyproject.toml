@@ -75,6 +75,9 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 "html.py" = ["E501"]
 
+[tool.bandit]
+targets= ["src"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

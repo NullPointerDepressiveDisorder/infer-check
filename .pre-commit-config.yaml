@@ -1,10 +1,11 @@
 repos:
   # General file hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+      - id: check-ast
       - id: check-yaml
       - id: check-json
       - id: check-toml
@@ -12,10 +13,12 @@ repos:
         args: ["--maxkb=500"]
       - id: check-merge-conflict
       - id: detect-private-key
+      - id: name-tests-test
+        args: ["--pytest-test-first"]
 
   # Ruff — lint + format in one pass
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.4
+    rev: v0.15.9
     hooks:
       - id: ruff
         args: ["--fix", "--exit-non-zero-on-fix"]
@@ -25,7 +28,7 @@ repos:
 
   # Type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+    rev: v1.20.0
     hooks:
       - id: mypy
         additional_dependencies:
@@ -50,7 +53,7 @@ repos:
           - |
             import json, sys, pathlib
             errors = []
-            for f in pathlib.Path('prompt-suites').glob('*.jsonl'):
+            for f in pathlib.Path('src/infer_check/prompt-suites').glob('*.jsonl'):
                 for i, line in enumerate(f.read_text().splitlines(), 1):
                     if not line.strip():
                         continue
@@ -65,3 +68,10 @@ repos:
         language: python
         files: 'prompt-suites/.*\.jsonl$'
         pass_filenames: false
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: '1.9.4'
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]
