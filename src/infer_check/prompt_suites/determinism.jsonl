@@ -48,3 +48,53 @@
 {"text": "Generate a plot summary for a movie where time runs backwards.", "category": "creative", "max_tokens": 256}
 {"text": "Explain the ship of Theseus paradox.", "category": "explanation", "max_tokens": 256}
 {"text": "List 5 inventions that were discovered by accident.", "category": "factual", "max_tokens": 256}
+{"text": "Translate 'The early bird catches the worm' into three different languages.", "category": "factual", "max_tokens": 256}
+{"text": "Write exactly 3 sentences about the color red. No more, no less.", "category": "constrained", "max_tokens": 128}
+{"text": "Rank these metals by melting point from lowest to highest: iron, gold, tungsten, mercury, copper.", "category": "factual", "max_tokens": 128}
+{"text": "Write a six-word memoir in the style of Hemingway.", "category": "constrained", "max_tokens": 64}
+{"text": "Explain how a microwave oven heats food.", "category": "explanation", "max_tokens": 256}
+{"text": "List all prime numbers between 1 and 50.", "category": "factual", "max_tokens": 128}
+{"text": "Write a product description for invisible socks.", "category": "creative", "max_tokens": 256}
+{"text": "Explain the difference between weather and climate in exactly two sentences.", "category": "constrained", "max_tokens": 128}
+{"text": "Name the seven deadly sins.", "category": "factual", "max_tokens": 128}
+{"text": "Describe the smell of rain.", "category": "creative", "max_tokens": 128}
+{"text": "What are the three laws of thermodynamics? State each one briefly.", "category": "factual", "max_tokens": 256}
+{"text": "Write a complaint letter from a penguin to the zoo management about the thermostat.", "category": "creative", "max_tokens": 256}
+{"text": "List 6 English words where all five vowels appear exactly once.", "category": "list", "max_tokens": 256}
+{"text": "Explain how a toilet flush mechanism works.", "category": "explanation", "max_tokens": 256}
+{"text": "Give me an acronym for SPACE where each letter stands for a life lesson.", "category": "constrained", "max_tokens": 128}
+{"text": "What is the tallest mountain on each continent?", "category": "factual", "max_tokens": 256}
+{"text": "Write a weather forecast for a planet made entirely of chocolate.", "category": "creative", "max_tokens": 256}
+{"text": "Explain the placebo effect.", "category": "explanation", "max_tokens": 256}
+{"text": "List the notes in a C major scale.", "category": "factual", "max_tokens": 64}
+{"text": "Write a warning label for a time machine.", "category": "creative", "max_tokens": 128}
+{"text": "What is Occam's Razor? Give an example of how to apply it.", "category": "explanation", "max_tokens": 256}
+{"text": "Name 5 countries that no longer exist.", "category": "factual", "max_tokens": 256}
+{"text": "Write an elevator pitch for a dating app exclusively for book lovers. Keep it under 50 words.", "category": "constrained", "max_tokens": 128}
+{"text": "Explain how noise-cancelling headphones work.", "category": "explanation", "max_tokens": 256}
+{"text": "Generate a menu for a restaurant where every dish is a pun.", "category": "creative", "max_tokens": 256}
+{"text": "What are the four fundamental forces of nature?", "category": "factual", "max_tokens": 128}
+{"text": "Write a voicemail greeting for a detective agency run by cats.", "category": "creative", "max_tokens": 128}
+{"text": "Explain the difference between empathy and sympathy.", "category": "explanation", "max_tokens": 256}
+{"text": "List 8 palindromes that are real English words.", "category": "list", "max_tokens": 128}
+{"text": "Write a thesis statement for an essay arguing that pizza is the perfect food.", "category": "constrained", "max_tokens": 128}
+{"text": "What are the stages of grief according to the Kübler-Ross model?", "category": "factual", "max_tokens": 128}
+{"text": "Describe what music sounds like to someone who has never heard any.", "category": "creative", "max_tokens": 256}
+{"text": "Explain how a compass works.", "category": "explanation", "max_tokens": 256}
+{"text": "List the colors of the visible light spectrum in order.", "category": "factual", "max_tokens": 64}
+{"text": "Write a one-star review of the Grand Canyon.", "category": "creative", "max_tokens": 256}
+{"text": "What are 4 differences between alligators and crocodiles?", "category": "factual", "max_tokens": 256}
+{"text": "Write a motivational speech for a group of houseplants.", "category": "creative", "max_tokens": 256}
+{"text": "Explain the Dunning-Kruger effect in plain language.", "category": "explanation", "max_tokens": 256}
+{"text": "Name the first 10 elements of the periodic table in order.", "category": "factual", "max_tokens": 128}
+{"text": "Write a text message breakup from a smartphone to its owner who just bought a new phone.", "category": "creative", "max_tokens": 256}
+{"text": "List 5 logical fallacies with a one-sentence example of each.", "category": "list", "max_tokens": 512}
+{"text": "Explain how soap removes grease from your hands.", "category": "explanation", "max_tokens": 256}
+{"text": "What are the NATO phonetic alphabet representations for the letters A through F?", "category": "factual", "max_tokens": 128}
+{"text": "Write the opening paragraph of a nature documentary narrated by a squirrel.", "category": "creative", "max_tokens": 256}
+{"text": "Explain the difference between a simile, a metaphor, and an analogy. Give one example of each.", "category": "explanation", "max_tokens": 256}
+{"text": "List all the countries in South America.", "category": "factual", "max_tokens": 128}
+{"text": "Describe an ordinary pencil as if it were a luxury product in a high-end catalog.", "category": "creative", "max_tokens": 256}
+{"text": "Explain what causes hiccups and how to stop them.", "category": "explanation", "max_tokens": 256}
+{"text": "Summarize the rules of chess in exactly 5 bullet points.", "category": "constrained", "max_tokens": 256}
+{"text": "Write a haiku about a traffic jam.", "category": "constrained", "max_tokens": 64}
