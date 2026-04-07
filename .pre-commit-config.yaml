@@ -53,7 +53,7 @@ repos:
           - |
             import json, sys, pathlib
             errors = []
-            for f in pathlib.Path('prompt-suites').glob('*.jsonl'):
+            for f in pathlib.Path('src/infer_check/prompt-suites').glob('*.jsonl'):
                 for i, line in enumerate(f.read_text().splitlines(), 1):
                     if not line.strip():
                         continue
