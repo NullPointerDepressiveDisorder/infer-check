@@ -1,5 +1,6 @@
-# 0.2.0 (2026-04-02)
+# 0.2.3 (2026-04-07)
 
+- Added `--num-prompts` option to all CLI subcommands to limit the number of prompts used in a task.
 - Added global `--max-tokens` flag (defaults to 1024) to the main CLI.
 - Increased default `max_tokens` for all prompts from 256 to 1024.
 
