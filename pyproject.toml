@@ -76,7 +76,8 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
 "html.py" = ["E501"]
 
 [tool.bandit]
-targets= ["src"]
+targets = ["src"]
+exclude_dirs = ["tests"]
 
 [tool.mypy]
 python_version = "3.11"
