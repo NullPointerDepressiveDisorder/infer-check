@@ -68,7 +68,7 @@ pip install "infer-check[mlx]"
 
 ### Quantization sweep
 
-Compare pre-quantized models against a baseline. Each model is a separate HuggingFace repo. Use `--max-tokens` to control generation length (defaults to 1024).
+Compare pre-quantized models against a baseline. Each model is a separate HuggingFace repo. Use `--max-tokens` to control generation length (defaults to 1024) and `--num-prompts` to limit the number of prompts used.
 
 ```
 infer-check sweep \
@@ -78,6 +78,7 @@ infer-check sweep \
   --backend mlx-lm \
   --prompts reasoning \
   --max-tokens 512 \
+  --num-prompts 10 \
   --output ./results/sweep/
 ```
 

@@ -27,6 +27,12 @@ def common_options(f: F) -> F:
             type=click.IntRange(min=1, clamp=True),
             help="Override default max tokens for generation.",
         ),
+        click.option(
+            "--num-prompts",
+            default=None,
+            type=click.IntRange(min=1, clamp=True),
+            help="Limit number of prompts to use.",
+        ),
     ]
     for option in reversed(options):
         f = option(f)
@@ -43,6 +49,30 @@ def _resolve_prompts(prompts: str) -> Path:
         raise click.BadParameter(str(exc)) from exc
 
 
+def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_prompts: int | None) -> list[Any]:
+    """Load and prepare a prompt suite with overrides applied."""
+    from infer_check.suites.loader import load_suite
+
+    # Update defaults from subcommand if provided
+    if max_tokens is not None:
+        ctx.obj["max_tokens"] = max_tokens
+    if num_prompts is not None:
+        ctx.obj["num_prompts"] = num_prompts
+
+    prompt_list = load_suite(_resolve_prompts(prompts))
+
+    # Apply num_prompts limit
+    if ctx.obj["num_prompts"] is not None:
+        prompt_list = prompt_list[: ctx.obj["num_prompts"]]
+
+    # Apply global max_tokens only if not explicitly set in the prompt JSONL
+    for p in prompt_list:
+        if "max_tokens" not in p.model_fields_set:
+            p.max_tokens = ctx.obj["max_tokens"]
+
+    return prompt_list
+
+
 @click.group()
 @click.version_option(package_name="infer-check")
 @click.option(
@@ -51,11 +81,18 @@ def _resolve_prompts(prompts: str) -> Path:
     show_default=True,
     help="Default max tokens for generation (applies to all prompts unless they specify their own).",
 )
+@click.option(
+    "--num-prompts",
+    default=None,
+    type=click.IntRange(min=1, clamp=True),
+    help="Limit the number of prompts to use from a suite; if omitted, all prompts are used.",
+)
 @click.pass_context
-def main(ctx: click.Context, max_tokens: int) -> None:
+def main(ctx: click.Context, max_tokens: int, num_prompts: int | None) -> None:
     """infer-check: correctness and reliability testing for LLM inference engines."""
     ctx.ensure_object(dict)
     ctx.obj["max_tokens"] = max_tokens
+    ctx.obj["num_prompts"] = num_prompts
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +140,7 @@ def sweep(
     baseline: str | None,
     base_url: str | None,
     max_tokens: int | None,
+    num_prompts: int | None,
 ) -> None:
     """Run a quantization sweep: compare pre-quantized models against a baseline.
 
@@ -119,11 +157,8 @@ def sweep(
     """
     from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
-    from infer_check.suites.loader import load_suite
 
-    # Update max_tokens from subcommand if provided
-    if max_tokens is not None:
-        ctx.obj["max_tokens"] = max_tokens
+    prompt_list = _load_prompts(ctx, prompts, max_tokens, num_prompts)
 
     # Parse label=model_path pairs
     model_map: dict[str, str] = {}
@@ -152,11 +187,6 @@ def sweep(
     for label, path in model_map.items():
         tag = " (baseline)" if label == baseline_label else ""
         console.print(f"  {label}: {path}{tag}")
-    prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens only if not explicitly set in the prompt JSONL
-    for p in prompt_list:
-        if "max_tokens" not in p.model_fields_set:
-            p.max_tokens = ctx.obj["max_tokens"]
 
     # Build a separate backend for each model
     backend_map: dict[str, Any] = {}
@@ -308,6 +338,7 @@ def compare(
     label_b: str | None,
     report: bool,
     max_tokens: int | None,
+    num_prompts: int | None,
 ) -> None:
     """Compare two quantizations of the same model.
 
@@ -335,11 +366,8 @@ def compare(
     # ── Resolve both model specs ─────────────────────────────────────
     from infer_check.resolve import resolve_model
     from infer_check.runner import TestRunner
-    from infer_check.suites.loader import load_suite
 
-    # Update max_tokens from subcommand if provided
-    if max_tokens is not None:
-        ctx.obj["max_tokens"] = max_tokens
+    prompt_list = _load_prompts(ctx, prompts, max_tokens, num_prompts)
 
     resolved_a = resolve_model(model_a, base_url=base_url, label=label_a)
     resolved_b = resolve_model(model_b, base_url=base_url, label=label_b)
@@ -349,12 +377,6 @@ def compare(
         f"A={resolved_a.label} ({resolved_a.backend}) "
         f"vs B={resolved_b.label} ({resolved_b.backend})"
     )
-
-    prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens only if not explicitly set in the prompt JSONL
-    for p in prompt_list:
-        if "max_tokens" not in p.model_fields_set:
-            p.max_tokens = ctx.obj["max_tokens"]
 
     console.print(f"  prompts: {len(prompt_list)} from '{prompts}'")
 
@@ -573,15 +595,13 @@ def diff(
     base_urls: str | None,
     chat: bool,
     max_tokens: int | None,
+    num_prompts: int | None,
 ) -> None:
     """Compare outputs across different backends for the same model and prompts."""
     from infer_check.backends.base import BackendConfig, get_backend
     from infer_check.runner import TestRunner
-    from infer_check.suites.loader import load_suite
 
-    # Update max_tokens from subcommand if provided
-    if max_tokens is not None:
-        ctx.obj["max_tokens"] = max_tokens
+    prompt_list = _load_prompts(ctx, prompts, max_tokens, num_prompts)
 
     backend_names = [b.strip() for b in backends.split(",") if b.strip()]
     url_list: list[str | None] = [u.strip() for u in base_urls.split(",")] if base_urls else [None] * len(backend_names)
@@ -590,12 +610,6 @@ def diff(
         url_list.append(None)
 
     console.print(f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}")
-
-    prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens only if not explicitly set in the prompt JSONL
-    for p in prompt_list:
-        if "max_tokens" not in p.model_fields_set:
-            p.max_tokens = ctx.obj["max_tokens"]
 
     backend_instances = []
     for name, url in zip(backend_names, url_list, strict=True):
@@ -693,15 +707,13 @@ def stress(
     concurrency: str,
     base_url: str | None,
     max_tokens: int | None,
+    num_prompts: int | None,
 ) -> None:
     """Stress-test a backend with varying concurrency levels."""
     from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
-    from infer_check.suites.loader import load_suite
 
-    # Update max_tokens from subcommand if provided
-    if max_tokens is not None:
-        ctx.obj["max_tokens"] = max_tokens
+    prompt_list = _load_prompts(ctx, prompts, max_tokens, num_prompts)
 
     concurrency_levels = [int(c.strip()) for c in concurrency.split(",") if c.strip()]
 
@@ -714,12 +726,6 @@ def stress(
     console.print(
         f"[bold cyan]stress[/bold cyan] model={model} backend={backend_instance.name} concurrency={concurrency_levels}"
     )
-
-    prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens only if not explicitly set in the prompt JSONL
-    for p in prompt_list:
-        if "max_tokens" not in p.model_fields_set:
-            p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
     stress_results = asyncio.run(
@@ -790,15 +796,13 @@ def determinism(
     runs: int,
     base_url: str | None,
     max_tokens: int | None,
+    num_prompts: int | None,
 ) -> None:
     """Test whether a backend produces identical outputs across repeated runs at temperature=0."""
     from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
-    from infer_check.suites.loader import load_suite
 
-    # Update max_tokens from subcommand if provided
-    if max_tokens is not None:
-        ctx.obj["max_tokens"] = max_tokens
+    prompt_list = _load_prompts(ctx, prompts, max_tokens, num_prompts)
 
     backend_instance = get_backend_for_model(
         model_str=model,
@@ -807,12 +811,6 @@ def determinism(
     )
 
     console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")
-
-    prompt_list = load_suite(_resolve_prompts(prompts))
-    # Apply global max_tokens only if not explicitly set in the prompt JSONL
-    for p in prompt_list:
-        if "max_tokens" not in p.model_fields_set:
-            p.max_tokens = ctx.obj["max_tokens"]
 
     runner = TestRunner()
     det_results = asyncio.run(
