@@ -65,11 +65,13 @@ class OpenAICompatBackend:
 
     async def _generate_chat(self, prompt: Prompt) -> InferenceResult:
         """Use ``/v1/chat/completions`` with proper message formatting."""
-        payload = {
+        payload: dict[str, object] = {
             "model": self._model_id,
             "messages": [{"role": "user", "content": prompt.text}],
             "max_tokens": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
+            "logprobs": True,
+            "top_logprobs": 5,
         }
 
         start = time.perf_counter()
@@ -103,7 +105,46 @@ class OpenAICompatBackend:
         text: str = message.get("content", "")
         if not text:
             text = message.get("reasoning_content", "")
-        tokens = text.split()
+
+        # Parse logprobs (chat completions format) -------------------------
+        tokens: list[str] = []
+        logprobs_list: list[float] | None = None
+        distributions: list[list[float]] | None = None
+        distribution_metadata: list[dict[str, int | str]] | None = None
+
+        lp_data = choice.get("logprobs")
+        if lp_data and lp_data.get("content"):
+            content_logprobs = lp_data["content"]
+            tokens = [entry["token"] for entry in content_logprobs]
+            logprobs_list = [
+                float(entry["logprob"]) if entry.get("logprob") is not None else -9999.0 for entry in content_logprobs
+            ]
+
+            distributions = []
+            distribution_metadata = []
+            for entry in content_logprobs:
+                top = entry.get("top_logprobs", [])
+                if not top:
+                    distributions.append([])
+                    distribution_metadata.append({})
+                    continue
+                sorted_items = sorted(top, key=lambda x: x.get("token", ""))
+                cleaned: list[tuple[str, float]] = []
+                for item in sorted_items:
+                    try:
+                        fv = float(item["logprob"]) if item.get("logprob") is not None else -9999.0
+                    except (TypeError, ValueError):
+                        fv = -9999.0
+                    if math.isnan(fv):
+                        fv = -9999.0
+                    cleaned.append((item.get("token", ""), fv))
+                distributions.append([fv for _, fv in cleaned])
+                meta: dict[str, int | str] = {}
+                for i, (tok, _) in enumerate(cleaned):
+                    meta[f"id_{i}"] = tok
+                distribution_metadata.append(meta)
+        else:
+            tokens = text.split()
 
         usage = data.get("usage", {})
         completion_tokens = usage.get("completion_tokens", len(tokens))
@@ -114,7 +155,9 @@ class OpenAICompatBackend:
             backend_name=self.name,
             model_id=self._model_id,
             tokens=tokens,
-            logprobs=None,
+            logprobs=logprobs_list,
+            distributions=distributions,
+            distribution_metadata=distribution_metadata,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,

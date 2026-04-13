@@ -59,11 +59,7 @@ def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_
     if num_prompts is not None:
         ctx.obj["num_prompts"] = num_prompts
 
-    prompt_list = load_suite(_resolve_prompts(prompts))
-
-    # Apply num_prompts limit
-    if ctx.obj["num_prompts"] is not None:
-        prompt_list = prompt_list[: ctx.obj["num_prompts"]]
+    prompt_list = load_suite(_resolve_prompts(prompts), num_prompts=ctx.obj["num_prompts"])
 
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
     for p in prompt_list:
