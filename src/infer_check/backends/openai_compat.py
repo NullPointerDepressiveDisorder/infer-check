@@ -49,6 +49,9 @@ class OpenAICompatBackend:
             timeout=120.0,
         )
 
+        # Logprobs support: assume yes until a server rejects it.
+        self._chat_logprobs_supported: bool = True
+
     # ------------------------------------------------------------------
     # BackendAdapter protocol
     # ------------------------------------------------------------------
@@ -64,15 +67,22 @@ class OpenAICompatBackend:
         return await self._generate_completions(prompt)
 
     async def _generate_chat(self, prompt: Prompt) -> InferenceResult:
-        """Use ``/v1/chat/completions`` with proper message formatting."""
+        """Use ``/v1/chat/completions`` with proper message formatting.
+
+        Requests logprobs when the server supports them.  If the first
+        request fails with a 4xx (unsupported parameter), the backend
+        automatically retries without logprobs and disables them for
+        all subsequent requests.
+        """
         payload: dict[str, object] = {
             "model": self._model_id,
             "messages": [{"role": "user", "content": prompt.text}],
             "max_tokens": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
-            "logprobs": True,
-            "top_logprobs": 5,
         }
+        if self._chat_logprobs_supported:
+            payload["logprobs"] = True
+            payload["top_logprobs"] = 5
 
         start = time.perf_counter()
         try:
@@ -87,8 +97,21 @@ class OpenAICompatBackend:
             raise RuntimeError(f"Request to {self._base_url}/v1/chat/completions timed out after 120s.") from exc
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
-            body = exc.response.text[:500]
-            raise RuntimeError(f"Server returned HTTP {status}: {body}") from exc
+            # If the server rejected logprobs, retry without them.
+            if 400 <= status < 500 and self._chat_logprobs_supported:
+                self._chat_logprobs_supported = False
+                payload.pop("logprobs", None)
+                payload.pop("top_logprobs", None)
+                start = time.perf_counter()
+                try:
+                    response = await self._client.post("/v1/chat/completions", json=payload)
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as retry_exc:
+                    body = retry_exc.response.text[:500]
+                    raise RuntimeError(f"Server returned HTTP {retry_exc.response.status_code}: {body}") from retry_exc
+            else:
+                body = exc.response.text[:500]
+                raise RuntimeError(f"Server returned HTTP {status}: {body}") from exc
 
         elapsed_s = time.perf_counter() - start
 
@@ -116,9 +139,16 @@ class OpenAICompatBackend:
         if lp_data and lp_data.get("content"):
             content_logprobs = lp_data["content"]
             tokens = [entry["token"] for entry in content_logprobs]
-            logprobs_list = [
-                float(entry["logprob"]) if entry.get("logprob") is not None else -9999.0 for entry in content_logprobs
-            ]
+            logprobs_list = []
+            for entry in content_logprobs:
+                raw = entry.get("logprob")
+                try:
+                    fv = float(raw) if raw is not None else -9999.0
+                except (TypeError, ValueError):
+                    fv = -9999.0
+                if math.isnan(fv):
+                    fv = -9999.0
+                logprobs_list.append(fv)
 
             distributions = []
             distribution_metadata = []
