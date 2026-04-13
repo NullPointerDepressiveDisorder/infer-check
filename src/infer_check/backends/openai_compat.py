@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from typing import Any
 
 import httpx
 
@@ -66,24 +67,11 @@ class OpenAICompatBackend:
             return await self._generate_chat(prompt)
         return await self._generate_completions(prompt)
 
-    async def _generate_chat(self, prompt: Prompt) -> InferenceResult:
-        """Use ``/v1/chat/completions`` with proper message formatting.
+    async def _post_chat(self, payload: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+        """POST to /v1/chat/completions with consistent error handling.
 
-        Requests logprobs when the server supports them.  If the first
-        request fails with a 4xx (unsupported parameter), the backend
-        automatically retries without logprobs and disables them for
-        all subsequent requests.
+        Returns (elapsed_seconds, response_json).
         """
-        payload: dict[str, object] = {
-            "model": self._model_id,
-            "messages": [{"role": "user", "content": prompt.text}],
-            "max_tokens": prompt.max_tokens,
-            "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
-        }
-        if self._chat_logprobs_supported:
-            payload["logprobs"] = True
-            payload["top_logprobs"] = 5
-
         start = time.perf_counter()
         try:
             response = await self._client.post("/v1/chat/completions", json=payload)
@@ -97,21 +85,8 @@ class OpenAICompatBackend:
             raise RuntimeError(f"Request to {self._base_url}/v1/chat/completions timed out after 120s.") from exc
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
-            # If the server rejected logprobs, retry without them.
-            if 400 <= status < 500 and self._chat_logprobs_supported:
-                self._chat_logprobs_supported = False
-                payload.pop("logprobs", None)
-                payload.pop("top_logprobs", None)
-                start = time.perf_counter()
-                try:
-                    response = await self._client.post("/v1/chat/completions", json=payload)
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as retry_exc:
-                    body = retry_exc.response.text[:500]
-                    raise RuntimeError(f"Server returned HTTP {retry_exc.response.status_code}: {body}") from retry_exc
-            else:
-                body = exc.response.text[:500]
-                raise RuntimeError(f"Server returned HTTP {status}: {body}") from exc
+            body = exc.response.text[:500]
+            raise RuntimeError(f"Server returned HTTP {status}: {body}") from exc
 
         elapsed_s = time.perf_counter() - start
 
@@ -122,6 +97,39 @@ class OpenAICompatBackend:
 
         if "choices" not in data or not data["choices"]:
             raise RuntimeError(f"Server returned empty or malformed response: {data}")
+
+        return elapsed_s, data
+
+    async def _generate_chat(self, prompt: Prompt) -> InferenceResult:
+        """Use ``/v1/chat/completions`` with proper message formatting.
+
+        Requests logprobs when the server supports them.  If the first
+        request fails with 400 or 422 (unsupported parameter), the backend
+        automatically retries without logprobs and disables them for
+        all subsequent requests.
+        """
+        payload: dict[str, object] = {
+            "model": self._model_id,
+            "messages": [{"role": "user", "content": prompt.text}],
+            "max_tokens": prompt.max_tokens,
+            "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
+        }
+        if self._chat_logprobs_supported:
+            payload["logprobs"] = True
+            payload["top_logprobs"] = 5
+
+        try:
+            elapsed_s, data = await self._post_chat(payload)
+        except RuntimeError as exc:
+            # Retry without logprobs only on 400/422 (unsupported parameter).
+            msg = str(exc)
+            if self._chat_logprobs_supported and ("HTTP 400" in msg or "HTTP 422" in msg):
+                self._chat_logprobs_supported = False
+                payload.pop("logprobs", None)
+                payload.pop("top_logprobs", None)
+                elapsed_s, data = await self._post_chat(payload)
+            else:
+                raise
 
         choice = data["choices"][0]
         message = choice.get("message", {})
