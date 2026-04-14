@@ -491,6 +491,11 @@ class TestRunner:
         prompts: list[Prompt],
     ) -> list[ComparisonResult]:
         """Compare outputs across different backends against a baseline."""
+        from infer_check.analysis.answer_extract import (
+            answers_match,
+            extract_answer,
+        )
+
         baseline_results: dict[str, InferenceResult] = {}
         comparisons: list[ComparisonResult] = []
 
@@ -533,6 +538,21 @@ class TestRunner:
                     baseline = baseline_results.get(test_res.prompt_id)
                     if baseline:
                         comp = self._compare(baseline, test_res)
+
+                        # Answer extraction and flip detection
+                        ans_a = extract_answer(baseline.text, prompt.category)
+                        ans_b = extract_answer(test_res.text, prompt.category)
+                        flipped = not answers_match(ans_a, ans_b)
+
+                        comp.metadata["flipped"] = flipped
+                        comp.metadata["answer_a"] = ans_a.value
+                        comp.metadata["answer_b"] = ans_b.value
+                        comp.metadata["extraction_strategy"] = ans_a.strategy
+                        comp.metadata["extraction_confidence"] = min(
+                            ans_a.confidence,
+                            ans_b.confidence,
+                        )
+
                         comparisons.append(comp)
                     progress.advance(task)
 
