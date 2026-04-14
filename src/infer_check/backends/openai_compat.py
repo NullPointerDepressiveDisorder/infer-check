@@ -18,6 +18,14 @@ from infer_check.types import InferenceResult, Prompt
 __all__ = ["OpenAICompatBackend"]
 
 
+class _ServerHTTPError(RuntimeError):
+    """Internal exception carrying the HTTP status code from the server."""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        self.status_code = status_code
+        super().__init__(f"Server returned HTTP {status_code}: {body}")
+
+
 class OpenAICompatBackend:
     """Backend adapter for any OpenAI-compatible completion server.
 
@@ -86,7 +94,7 @@ class OpenAICompatBackend:
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             body = exc.response.text[:500]
-            raise RuntimeError(f"Server returned HTTP {status}: {body}") from exc
+            raise _ServerHTTPError(status, body) from exc
 
         elapsed_s = time.perf_counter() - start
 
@@ -120,10 +128,9 @@ class OpenAICompatBackend:
 
         try:
             elapsed_s, data = await self._post_chat(payload)
-        except RuntimeError as exc:
+        except _ServerHTTPError as exc:
             # Retry without logprobs only on 400/422 (unsupported parameter).
-            msg = str(exc)
-            if self._chat_logprobs_supported and ("HTTP 400" in msg or "HTTP 422" in msg):
+            if self._chat_logprobs_supported and exc.status_code in (400, 422):
                 self._chat_logprobs_supported = False
                 payload.pop("logprobs", None)
                 payload.pop("top_logprobs", None)
@@ -146,7 +153,7 @@ class OpenAICompatBackend:
         lp_data = choice.get("logprobs")
         if lp_data and lp_data.get("content"):
             content_logprobs = lp_data["content"]
-            tokens = [entry["token"] for entry in content_logprobs]
+            tokens = [entry.get("token", "") for entry in content_logprobs]
             logprobs_list = []
             for entry in content_logprobs:
                 raw = entry.get("logprob")

@@ -36,7 +36,7 @@ def load_suite(path: str | Path, num_prompts: int | None = None) -> list[Prompt]
                 data = json.loads(line)
                 prompt = Prompt.model_validate(data)
                 all_prompts.append(prompt)
-                cat = prompt.category or "default"
+                cat = prompt.category
                 if cat not in prompts_by_category:
                     prompts_by_category[cat] = []
                 prompts_by_category[cat].append(prompt)
@@ -75,7 +75,7 @@ def load_suite(path: str | Path, num_prompts: int | None = None) -> list[Prompt]
         final_prompts = all_prompts
 
     # Log summary
-    category_counts = Counter(p.category or "default" for p in final_prompts)
+    category_counts = Counter(p.category for p in final_prompts)
     console.print(f"[bold green]Loaded {len(final_prompts)} prompts from {path_obj.name}[/bold green]")
     for category, count in category_counts.most_common():
         console.print(f"  - {category}: {count}")
