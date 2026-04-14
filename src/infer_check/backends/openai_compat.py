@@ -9,12 +9,21 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from typing import Any
 
 import httpx
 
 from infer_check.types import InferenceResult, Prompt
 
 __all__ = ["OpenAICompatBackend"]
+
+
+class _ServerHTTPError(RuntimeError):
+    """Internal exception carrying the HTTP status code from the server."""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        self.status_code = status_code
+        super().__init__(f"Server returned HTTP {status_code}: {body}")
 
 
 class OpenAICompatBackend:
@@ -49,6 +58,9 @@ class OpenAICompatBackend:
             timeout=120.0,
         )
 
+        # Logprobs support: assume yes until a server rejects it.
+        self._chat_logprobs_supported: bool = True
+
     # ------------------------------------------------------------------
     # BackendAdapter protocol
     # ------------------------------------------------------------------
@@ -63,15 +75,11 @@ class OpenAICompatBackend:
             return await self._generate_chat(prompt)
         return await self._generate_completions(prompt)
 
-    async def _generate_chat(self, prompt: Prompt) -> InferenceResult:
-        """Use ``/v1/chat/completions`` with proper message formatting."""
-        payload = {
-            "model": self._model_id,
-            "messages": [{"role": "user", "content": prompt.text}],
-            "max_tokens": prompt.max_tokens,
-            "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
-        }
+    async def _post_chat(self, payload: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+        """POST to /v1/chat/completions with consistent error handling.
 
+        Returns (elapsed_seconds, response_json).
+        """
         start = time.perf_counter()
         try:
             response = await self._client.post("/v1/chat/completions", json=payload)
@@ -86,7 +94,7 @@ class OpenAICompatBackend:
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             body = exc.response.text[:500]
-            raise RuntimeError(f"Server returned HTTP {status}: {body}") from exc
+            raise _ServerHTTPError(status, body) from exc
 
         elapsed_s = time.perf_counter() - start
 
@@ -98,12 +106,90 @@ class OpenAICompatBackend:
         if "choices" not in data or not data["choices"]:
             raise RuntimeError(f"Server returned empty or malformed response: {data}")
 
+        return elapsed_s, data
+
+    async def _generate_chat(self, prompt: Prompt) -> InferenceResult:
+        """Use ``/v1/chat/completions`` with proper message formatting.
+
+        Requests logprobs when the server supports them.  If the first
+        request fails with 400 or 422 (unsupported parameter), the backend
+        automatically retries without logprobs and disables them for
+        all subsequent requests.
+        """
+        payload: dict[str, object] = {
+            "model": self._model_id,
+            "messages": [{"role": "user", "content": prompt.text}],
+            "max_tokens": prompt.max_tokens,
+            "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
+        }
+        if self._chat_logprobs_supported:
+            payload["logprobs"] = True
+            payload["top_logprobs"] = 5
+
+        try:
+            elapsed_s, data = await self._post_chat(payload)
+        except _ServerHTTPError as exc:
+            # Retry without logprobs only on 400/422 (unsupported parameter).
+            if self._chat_logprobs_supported and exc.status_code in (400, 422):
+                self._chat_logprobs_supported = False
+                payload.pop("logprobs", None)
+                payload.pop("top_logprobs", None)
+                elapsed_s, data = await self._post_chat(payload)
+            else:
+                raise
+
         choice = data["choices"][0]
         message = choice.get("message", {})
         text: str = message.get("content", "")
         if not text:
             text = message.get("reasoning_content", "")
-        tokens = text.split()
+
+        # Parse logprobs (chat completions format) -------------------------
+        tokens: list[str] = []
+        logprobs_list: list[float] | None = None
+        distributions: list[list[float]] | None = None
+        distribution_metadata: list[dict[str, int | str]] | None = None
+
+        lp_data = choice.get("logprobs")
+        if lp_data and lp_data.get("content"):
+            content_logprobs = lp_data["content"]
+            tokens = [entry.get("token", "") for entry in content_logprobs]
+            logprobs_list = []
+            for entry in content_logprobs:
+                raw = entry.get("logprob")
+                try:
+                    fv = float(raw) if raw is not None else -9999.0
+                except (TypeError, ValueError):
+                    fv = -9999.0
+                if math.isnan(fv):
+                    fv = -9999.0
+                logprobs_list.append(fv)
+
+            distributions = []
+            distribution_metadata = []
+            for entry in content_logprobs:
+                top = entry.get("top_logprobs", [])
+                if not top:
+                    distributions.append([])
+                    distribution_metadata.append({})
+                    continue
+                sorted_items = sorted(top, key=lambda x: x.get("token", ""))
+                cleaned: list[tuple[str, float]] = []
+                for item in sorted_items:
+                    try:
+                        fv = float(item["logprob"]) if item.get("logprob") is not None else -9999.0
+                    except (TypeError, ValueError):
+                        fv = -9999.0
+                    if math.isnan(fv):
+                        fv = -9999.0
+                    cleaned.append((item.get("token", ""), fv))
+                distributions.append([fv for _, fv in cleaned])
+                meta: dict[str, int | str] = {}
+                for i, (tok, _) in enumerate(cleaned):
+                    meta[f"id_{i}"] = tok
+                distribution_metadata.append(meta)
+        else:
+            tokens = text.split()
 
         usage = data.get("usage", {})
         completion_tokens = usage.get("completion_tokens", len(tokens))
@@ -114,7 +200,9 @@ class OpenAICompatBackend:
             backend_name=self.name,
             model_id=self._model_id,
             tokens=tokens,
-            logprobs=None,
+            logprobs=logprobs_list,
+            distributions=distributions,
+            distribution_metadata=distribution_metadata,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
