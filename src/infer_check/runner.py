@@ -27,6 +27,32 @@ class TestRunner:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
+    def _annotate_flip_metadata(
+        self,
+        comp: ComparisonResult,
+        text_a: str,
+        text_b: str,
+        category: str,
+    ) -> None:
+        """Extract functional answers and check for flips, updating comparison metadata."""
+        from infer_check.analysis.answer_extract import (
+            answers_match,
+            extract_answer,
+        )
+
+        ans_a = extract_answer(text_a, category)
+        ans_b = extract_answer(text_b, category)
+        flipped = not answers_match(ans_a, ans_b)
+
+        comp.metadata["flipped"] = flipped
+        comp.metadata["answer_a"] = ans_a.value
+        comp.metadata["answer_b"] = ans_b.value
+        comp.metadata["extraction_strategy"] = ans_a.strategy
+        comp.metadata["extraction_confidence"] = min(
+            ans_a.confidence,
+            ans_b.confidence,
+        )
+
     def _save_checkpoint(self, results: Any, path: Path) -> None:
         """Write intermediate results as JSON for resumability."""
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -401,30 +427,12 @@ class TestRunner:
                 progress.advance(task)
 
         # ── Build comparisons with answer extraction ────────────────
-        from infer_check.analysis.answer_extract import (
-            answers_match,
-            extract_answer,
-        )
-
         for prompt in prompts:
             a = results_a.get(prompt.id)
             b = results_b.get(prompt.id)
             if a and b:
                 comp = self._compare(a, b)
-
-                # Extract functional answers and check for flips.
-                ans_a = extract_answer(a.text, prompt.category)
-                ans_b = extract_answer(b.text, prompt.category)
-                flipped = not answers_match(ans_a, ans_b)
-
-                comp.metadata["flipped"] = flipped
-                comp.metadata["answer_a"] = ans_a.value
-                comp.metadata["answer_b"] = ans_b.value
-                comp.metadata["extraction_strategy"] = ans_a.strategy
-                comp.metadata["extraction_confidence"] = min(
-                    ans_a.confidence,
-                    ans_b.confidence,
-                )
+                self._annotate_flip_metadata(comp, a.text, b.text, prompt.category)
                 comparisons.append(comp)
 
         # ── Aggregate metrics ────────────────────────────────────────
@@ -533,6 +541,7 @@ class TestRunner:
                     baseline = baseline_results.get(test_res.prompt_id)
                     if baseline:
                         comp = self._compare(baseline, test_res)
+                        self._annotate_flip_metadata(comp, baseline.text, test_res.text, prompt.category)
                         comparisons.append(comp)
                     progress.advance(task)
 

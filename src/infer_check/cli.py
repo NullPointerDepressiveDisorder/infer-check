@@ -648,6 +648,7 @@ def diff(
     table.add_column("test_backend", style="cyan")
     table.add_column("failures", justify="right")
     table.add_column("failure_rate", justify="right")
+    table.add_column("flip_rate", justify="right")
     table.add_column("mean_similarity", justify="right")
 
     from collections import defaultdict
@@ -659,8 +660,16 @@ def diff(
     for backend_name, comps in groups.items():
         failures = sum(1 for c in comps if c.is_failure)
         failure_rate = failures / len(comps) if comps else 0.0
+        flips = sum(1 for c in comps if c.metadata.get("flipped", False))
+        flip_rate = flips / len(comps) if comps else 0.0
         mean_sim = sum(c.text_similarity for c in comps) / len(comps) if comps else 0.0
-        table.add_row(backend_name, str(failures), f"{failure_rate:.2%}", f"{mean_sim:.4f}")
+        table.add_row(
+            backend_name,
+            str(failures),
+            f"{failure_rate:.2%}",
+            f"[{'red' if flip_rate > 0.1 else 'green'}]{flip_rate:.1%}[/]",
+            f"{mean_sim:.4f}",
+        )
 
     console.print(table)
 
