@@ -2,10 +2,14 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/infer-check?logo=PyPi&color=%233775A9)](https://pypi.org/project/infer-check/)
 [![Run tests and upload coverage](https://github.com/NullPointerDepressiveDisorder/infer-check/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/NullPointerDepressiveDisorder/infer-check/actions/workflows/coverage.yml)
+[![codecov](https://codecov.io/gh/NullPointerDepressiveDisorder/infer-check/graph/badge.svg?token=FWG0Z5YHUS)](https://codecov.io/gh/NullPointerDepressiveDisorder/infer-check)
+[![Docs](https://img.shields.io/badge/docs-mkdocs-blue)](https://nullpointerdepressivedisorder.github.io/infer-check)
 
 **Catches the correctness bugs that benchmarks miss in LLM inference engines.**
 
 Quantization silently breaks arithmetic. Serving layers silently alter output. KV caches silently corrupt under load. Benchmarks like lm-evaluation-harness test whether models are smart — `infer-check` tests whether engines are correct.
+
+> **[Read the full documentation](https://nullpointerdepressivedisorder.github.io/infer-check)**
 
 ## The problem
 
@@ -18,43 +22,6 @@ Every LLM inference engine has correctness bugs that benchmarks don't catch:
 
 These aren't model quality problems — they're engine correctness failures. `infer-check` is a CLI tool that runs differential tests across backends, quantization levels, and concurrency conditions to surface them automatically.
 
-## Example results
-
-Results from running `infer-check` on Llama-3.1-8B-Instruct and Qwen3.5-4B (MoE) on Apple Silicon using mlx-lm and vllm-mlx. These demonstrate what the tool catches — not a comprehensive benchmark.
-
-### Quantization sweep
-
-4-bit quantization on Llama-3.1-8B showed clear task-dependent degradation. Numerical tasks broke worst:
-
-```
-                       Llama-3.1-8B: bf16 vs 4bit
-┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
-┃ prompt suite          ┃ identical ┃ severe   ┃ mean_similarity ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
-│ adversarial-numerics  │     0/30  │   23/30  │          0.311  │
-│ reasoning             │     1/50  │   35/50  │          0.384  │
-│ code                  │     0/49  │   30/49  │          0.452  │
-└───────────────────────┴───────────┴──────────┴─────────────────┘
-```
-
-A "severe" divergence means the quantized output is functionally wrong — not just worded differently, but giving incorrect answers to questions the bf16 baseline handles correctly. This pattern is consistent with published research on quantization-induced degradation, reproduced here on MLX's native quantization scheme.
-
-### Dense vs. MoE comparison
-
-Qwen3.5-4B (Gated Delta Networks + sparse MoE) showed similar degradation rates to dense Llama-3.1-8B in our testing — 35/50 severe on reasoning at 4-bit. Small sample, but the tool picks up the signal clearly on both architectures.
-
-### Cross-backend diff
-
-mlx-lm vs vllm-mlx at temperature=0 on Llama-3.1-8B-4bit: 50/50 identical (reasoning) and 30/30 identical (numerics). In this test, the vllm-mlx serving layer introduced zero divergence — output differences in production would come from quantization, not from the serving layer itself.
-
-### Determinism
-
-Llama-3.1-8B-4bit and Qwen3.5-4B both scored 50/50 identical across 20 runs per prompt on single-request mlx-lm inference at temperature=0.
-
-### Stress test
-
-vllm-mlx at concurrency 1/2/4/8: zero errors, 100% output consistency at all levels. No KV cache corruption or batch-dependent divergence detected.
-
 ## Installation
 
 ```
@@ -64,27 +31,43 @@ pip install infer-check
 pip install "infer-check[mlx]"
 ```
 
-## Usage
+## Quick start
 
-### Quantization sweep
+Compare two quantizations head-to-head:
 
-Compare pre-quantized models against a baseline. Each model is a separate HuggingFace repo. Use `--max-tokens` to control generation length (defaults to 1024) and `--num-prompts` to limit the number of prompts used.
+```
+infer-check compare \
+  mlx-community/Llama-3.1-8B-Instruct-4bit \
+  mlx-community/Llama-3.1-8B-Instruct-8bit \
+  --prompts adversarial-numerics
+```
+
+Run a full quantization sweep:
 
 ```
 infer-check sweep \
   --models "bf16=mlx-community/Meta-Llama-3.1-8B-Instruct-bf16,\
             8bit=mlx-community/Meta-Llama-3.1-8B-Instruct-8bit,\
             4bit=mlx-community/Meta-Llama-3.1-8B-Instruct-4bit" \
-  --backend mlx-lm \
-  --prompts reasoning \
-  --max-tokens 512 \
-  --num-prompts 10 \
-  --output ./results/sweep/
+  --prompts reasoning
 ```
 
-`--prompts` accepts either a bundled suite name (`reasoning`, `code`, `adversarial-numerics`, `determinism`, `long-context`, `quant-sensitive`) or a path to any `.jsonl` file.
+## Commands
 
-The baseline is automatically run twice as a self-check — if it's not 50/50 identical, your comparison data is unreliable.
+| Command | Purpose | Docs |
+| --- | --- | --- |
+| `sweep` | Compare pre-quantized models against a baseline | [docs](https://nullpointerdepressivedisorder.github.io/infer-check/commands/sweep/) |
+| `compare` | Head-to-head comparison of two models or quantizations | [docs](https://nullpointerdepressivedisorder.github.io/infer-check/commands/compare/) |
+| `diff` | Compare outputs across different backends for the same model | [docs](https://nullpointerdepressivedisorder.github.io/infer-check/commands/diff/) |
+| `determinism` | Test output reproducibility at temperature=0 | [docs](https://nullpointerdepressivedisorder.github.io/infer-check/commands/determinism/) |
+| `stress` | Test correctness under concurrent load | [docs](https://nullpointerdepressivedisorder.github.io/infer-check/commands/stress/) |
+| `report` | Generate HTML/JSON reports from saved results | [docs](https://nullpointerdepressivedisorder.github.io/infer-check/commands/report/) |
+
+## Example results
+
+Results from running `infer-check` on Llama-3.1-8B-Instruct on Apple Silicon using mlx-lm.
+
+### Quantization sweep
 
 ```
                                  Sweep Summary
@@ -97,86 +80,45 @@ The baseline is automatically run twice as a self-check — if it's not 50/50 id
 └─────────────────────┴───────────┴───────┴──────────┴────────┴─────────────────┘
 ```
 
+A "severe" divergence means the quantized output is functionally wrong — not just worded differently, but giving incorrect answers to questions the bf16 baseline handles correctly.
+
 ### Cross-backend diff
 
-Same model, same quant, different inference paths. Catches serving-layer bugs.
+mlx-lm vs vllm-mlx at temperature=0: 50/50 identical (reasoning) and 30/30 identical (numerics). Zero serving-layer divergence detected.
 
-```
-# Start vllm-mlx in another terminal:
-# vllm-mlx serve mlx-community/Meta-Llama-3.1-8B-Instruct-4bit --port 8000
+### Determinism & stress
 
-infer-check diff \
-  --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit \
-  --backends "mlx-lm,openai-compat" \
-  --base-urls ",http://127.0.0.1:8000" \
-  --prompts reasoning \
-  --output ./results/diff/
-```
+100% determinism across 20 runs per prompt at temperature=0. 100% output consistency at concurrency levels 1/2/4/8.
 
-Uses `/v1/chat/completions` by default (`--chat`) so server-side chat templates match the local backend. Pass `--no-chat` for raw `/v1/completions`.
+## Supported backends
 
-### Determinism
+| Backend           | Type | Use case |
+|-------------------| --- | --- |
+| **mlx-lm**        | In-process | Local Apple Silicon inference with logprobs |
+| **llama-cpp**     | HTTP | `llama-server` via `/completion` endpoint |
+| **vllm-mlx**      | HTTP | Continuous batching on Apple Silicon |
+| **openai-compat** | HTTP | Any OpenAI-compatible server (vLLM, SGLang, Ollama) |
 
-Same prompt N times at temperature=0. Output should be bit-identical every run.
-
-```
-infer-check determinism \
-  --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit \
-  --backend mlx-lm \
-  --prompts determinism \
-  --runs 20 \
-  --output ./results/determinism/
-```
-
-### Stress test
-
-Concurrent requests through a serving backend. Tests KV cache correctness under load.
-
-```
-infer-check stress \
-  --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit \
-  --backend openai-compat \
-  --base-url http://127.0.0.1:8000 \
-  --prompts reasoning \
-  --concurrency 1,2,4,8 \
-  --output ./results/stress/
-```
-
-### Report
-
-Generate an HTML report from all saved results.
-
-```
-infer-check report ./results/ --format html
-```
+See the [backends documentation](https://nullpointerdepressivedisorder.github.io/infer-check/backends/) for setup and configuration details.
 
 ## Prompt suites
 
-Curated prompts targeting known quantization failure modes:
+Six curated suites ship with the package — no need to clone the repo:
 
 | Suite | Count | Purpose |
 | --- | --- | --- |
-| `reasoning.jsonl` | 50 | Multi-step math and logic |
-| `code.jsonl` | 49 | Python, JSON, SQL generation |
-| `adversarial-numerics.jsonl` | 30 | IEEE 754 edge cases, overflow, precision |
-| `long-context.jsonl` | 10 | Tables and transcripts with recall questions |
-| `quant-sensitive.jsonl` | 20 | Multi-digit arithmetic, long CoT, precise syntax |
-| `determinism.jsonl` | 50 | High-entropy continuations for determinism testing |
+| `reasoning` | 50 | Multi-step math and logic |
+| `code` | 49 | Python, JSON, SQL generation |
+| `adversarial-numerics` | 30 | IEEE 754 edge cases, overflow, precision |
+| `long-context` | 10 | Tables and transcripts with recall questions |
+| `quant-sensitive` | 20 | Multi-digit arithmetic, long CoT, precise syntax |
+| `determinism` | 50 | High-entropy continuations for determinism testing |
 
-All suites ship with the package — no need to clone the repo. Custom suites are JSONL files with one object per line (default `max_tokens` is 1024):
+Custom suites are JSONL files with one object per line:
 
 ```json
 {"id": "custom-001", "text": "Your prompt here", "category": "math", "max_tokens": 512}
 ```
-
-## Supported backends
-
-| Backend | Type | Use case |
-| --- | --- | --- |
-| **mlx-lm** | In-process | Local Apple Silicon inference with logprobs |
-| **llama.cpp** | HTTP | `llama-server` via `/completion` endpoint |
-| **vllm-mlx** | HTTP | Continuous batching on Apple Silicon |
-| **openai-compat** | HTTP | Any OpenAI-compatible server (vLLM, SGLang, Ollama) |
 
 ## Roadmap
 

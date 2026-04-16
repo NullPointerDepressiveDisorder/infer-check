@@ -1,0 +1,56 @@
+site_name: infer-check
+site_url: https://nullpointerdepressivedisorder.github.io/infer-check
+site_description: Cross-backend differential testing for LLM inference correctness
+repo_url: https://github.com/NullPointerDepressiveDisorder/infer-check
+repo_name: infer-check
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - search.highlight
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - mkdocs-click
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Commands:
+      - sweep: commands/sweep.md
+      - compare: commands/compare.md
+      - diff: commands/diff.md
+      - determinism: commands/determinism.md
+      - stress: commands/stress.md
+      - report: commands/report.md
+  - Backends: backends.md
+  - Interpreting Results: interpreting-results.md
