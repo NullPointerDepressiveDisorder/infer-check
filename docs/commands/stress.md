@@ -2,27 +2,15 @@
 
 Stress-test a backend with varying concurrency levels. Tests whether concurrent requests cause output divergence, KV cache corruption, or errors.
 
-## Usage
+## CLI Reference
 
-```bash
-infer-check stress \
-  --model MODEL_ID \
-  --prompts SUITE \
-  --concurrency 1,2,4,8,16
-```
-
-## Options
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `--model` | yes | | Model ID or HuggingFace path. |
-| `--backend` | no | auto-detected | Backend type. Auto-detected from model path if omitted. |
-| `--prompts` | yes | | Bundled suite name or path to a `.jsonl` file. |
-| `--output` | no | `./results/stress/` | Output directory for result JSON. |
-| `--concurrency` | no | `1,2,4,8,16` | Comma-separated concurrency levels to test. |
-| `--base-url` | no | | Base URL for HTTP backends. |
-| `--max-tokens` | no | | Override default max tokens for generation. |
-| `--num-prompts` | no | | Limit number of prompts to use. |
+::: mkdocs-click
+    :module: infer_check.cli
+    :command: main
+    :prog_name: infer-check
+    :subcommand: stress
+    :style: table
+    :show_subcommand_aliases:
 
 ## How it works
 

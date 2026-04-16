@@ -2,27 +2,15 @@
 
 Compare pre-quantized models against a baseline. Each model is a separate HuggingFace repo or local path. The first model (or `--baseline`) is the reference; all others are compared against it.
 
-## Usage
+## CLI Reference
 
-```bash
-infer-check sweep \
-  --models "bf16=mlx-community/Meta-Llama-3.1-8B-Instruct-bf16,\
-            4bit=mlx-community/Meta-Llama-3.1-8B-Instruct-4bit" \
-  --prompts reasoning
-```
-
-## Options
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `--models` | yes | | Comma-separated `label=model_path` pairs. If no label is given, the last path component is used. |
-| `--backend` | no | auto-detected | Backend type. Auto-detected from model paths if omitted. |
-| `--prompts` | yes | | Bundled suite name (e.g. `reasoning`) or path to a `.jsonl` file. |
-| `--output` | no | `./results/sweep/` | Output directory for result JSON. |
-| `--baseline` | no | first model | Label of the baseline model. Defaults to the first entry in `--models`. |
-| `--base-url` | no | | Base URL for HTTP backends. |
-| `--max-tokens` | no | | Override default max tokens for generation. |
-| `--num-prompts` | no | | Limit number of prompts to use. |
+::: mkdocs-click
+    :module: infer_check.cli
+    :command: main
+    :prog_name: infer-check
+    :subcommand: sweep
+    :style: table
+    :show_subcommand_aliases:
 
 ## How it works
 

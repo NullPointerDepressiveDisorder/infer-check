@@ -2,24 +2,15 @@
 
 Generate a report from previously saved result JSON files. Supports HTML and JSON output formats.
 
-## Usage
+## CLI Reference
 
-```bash
-infer-check report RESULTS_DIR [OPTIONS]
-```
-
-## Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `RESULTS_DIR` | Directory containing result JSON files. Scanned recursively. |
-
-## Options
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `--format` | no | `html` | Output format. Choices: `html`, `json`. |
-| `--output` | no | `<RESULTS_DIR>/report.html` | Output file path. Defaults to `report.html` or `report.json` in the results directory. |
+::: mkdocs-click
+    :module: infer_check.cli
+    :command: main
+    :prog_name: infer-check
+    :subcommand: report
+    :style: table
+    :show_subcommand_aliases:
 
 ## How it works
 

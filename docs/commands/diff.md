@@ -2,28 +2,15 @@
 
 Compare outputs across different backends for the same model and prompts. Catches serving-layer bugs by holding the model and quantization constant while varying the inference path.
 
-## Usage
+## CLI Reference
 
-```bash
-infer-check diff \
-  --model MODEL_ID \
-  --backends "backend1,backend2" \
-  --prompts SUITE
-```
-
-## Options
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `--model` | yes | | Model ID or HuggingFace path. |
-| `--backends` | yes | | Comma-separated backend names. The first is the baseline; all others are tested against it. |
-| `--prompts` | yes | | Bundled suite name or path to a `.jsonl` file. |
-| `--output` | no | `./results/diff/` | Output directory for result JSON. |
-| `--quant` | no | | Quantization level applied to all backends. |
-| `--base-urls` | no | | Comma-separated base URLs, positionally matched to `--backends`. Use empty entries for backends that don't need a URL. |
-| `--chat` / `--no-chat` | no | `--chat` | Use `/v1/chat/completions` for HTTP backends (applies chat template server-side). Pass `--no-chat` for raw `/v1/completions`. |
-| `--max-tokens` | no | | Override default max tokens for generation. |
-| `--num-prompts` | no | | Limit number of prompts to use. |
+::: mkdocs-click
+    :module: infer_check.cli
+    :command: main
+    :prog_name: infer-check
+    :subcommand: diff
+    :style: table
+    :show_subcommand_aliases:
 
 ## How it works
 

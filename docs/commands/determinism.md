@@ -2,27 +2,15 @@
 
 Test whether a backend produces identical outputs across repeated runs at temperature=0. A correctly implemented inference engine should produce bit-identical output for the same prompt and parameters every time.
 
-## Usage
+## CLI Reference
 
-```bash
-infer-check determinism \
-  --model MODEL_ID \
-  --prompts SUITE \
-  --runs N
-```
-
-## Options
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `--model` | yes | | Model ID or HuggingFace path. |
-| `--backend` | no | auto-detected | Backend type. Auto-detected from model path if omitted. |
-| `--prompts` | yes | | Bundled suite name or path to a `.jsonl` file. The `determinism` suite is designed for this command. |
-| `--output` | no | `./results/determinism/` | Output directory for result JSON. |
-| `--runs` | no | `100` | Number of runs per prompt. |
-| `--base-url` | no | | Base URL for HTTP backends. |
-| `--max-tokens` | no | | Override default max tokens for generation. |
-| `--num-prompts` | no | | Limit number of prompts to use. |
+::: mkdocs-click
+    :module: infer_check.cli
+    :command: main
+    :prog_name: infer-check
+    :subcommand: determinism
+    :style: table
+    :show_subcommand_aliases:
 
 ## How it works
 

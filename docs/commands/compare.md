@@ -2,31 +2,15 @@
 
 Head-to-head comparison of two models, quantizations, or backends. Auto-detects the backend from model specs, or accepts explicit prefixes.
 
-## Usage
+## CLI Reference
 
-```bash
-infer-check compare MODEL_A MODEL_B [OPTIONS]
-```
-
-## Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `MODEL_A` | Model spec for the first model -- HuggingFace repo, Ollama tag, or local GGUF path. |
-| `MODEL_B` | Model spec for the second model. |
-
-## Options
-
-| Option | Required | Default | Description |
-|--------|----------|---------|-------------|
-| `--prompts` | no | `adversarial-numerics` | Bundled suite name or path to a `.jsonl` file. |
-| `--output` | no | `./results/compare/` | Output directory for result JSON and reports. |
-| `--base-url` | no | | Base URL override for HTTP backends. Applied to both models unless they resolve to mlx-lm. |
-| `--label-a` | no | auto-derived | Custom label for model A. |
-| `--label-b` | no | auto-derived | Custom label for model B. |
-| `--report` / `--no-report` | no | `--report` | Generate an HTML comparison report after the run. |
-| `--max-tokens` | no | | Override default max tokens for generation. |
-| `--num-prompts` | no | | Limit number of prompts to use. |
+::: mkdocs-click
+    :module: infer_check.cli
+    :command: main
+    :prog_name: infer-check
+    :subcommand: compare
+    :style: table
+    :show_subcommand_aliases:
 
 ## How it works
 
