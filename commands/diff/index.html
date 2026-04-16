@@ -1,0 +1,1293 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Cross-backend differential testing for LLM inference correctness">
+      
+      
+      
+        <link rel="canonical" href="https://nullpointerdepressivedisorder.github.io/infer-check/commands/diff/">
+      
+      
+        <link rel="prev" href="../compare/">
+      
+      
+        <link rel="next" href="../determinism/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>diff - infer-check</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#diff" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="infer-check" class="md-header__button md-logo" aria-label="infer-check" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            infer-check
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              diff
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/NullPointerDepressiveDisorder/infer-check" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    infer-check
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="infer-check" class="md-nav__button md-logo" aria-label="infer-check" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    infer-check
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/NullPointerDepressiveDisorder/infer-check" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    infer-check
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Commands
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sweep/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sweep
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compare/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    compare
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diff
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../determinism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    determinism
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../stress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    stress
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interpreting-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpreting Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="diff">diff</h1>
+<p>Compare outputs across different backends for the same model and prompts. Catches serving-layer bugs by holding the model and quantization constant while varying the inference path.</p>
+<h2 id="cli-reference">CLI Reference</h2>
+<h1 id="infer-check">infer-check</h1>
+<p>infer-check: correctness and reliability testing for LLM inference engines.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>infer-check [OPTIONS] COMMAND [ARGS]...
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--version</code></td>
+<td>boolean</td>
+<td>Show the version and exit.</td>
+<td><code>False</code></td>
+</tr>
+<tr>
+<td><code>--max-tokens</code></td>
+<td>integer</td>
+<td>Default max tokens for generation (applies to all prompts unless they specify their own).</td>
+<td><code>1024</code></td>
+</tr>
+<tr>
+<td><code>--num-prompts</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Limit the number of prompts to use from a suite; if omitted, all prompts are used.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>boolean</td>
+<td>Show this message and exit.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="compare">compare</h2>
+<p>Compare two quantizations of the same model.</p>
+<p>MODEL_A and MODEL_B are model specs — HuggingFace repos, Ollama tags,
+or local GGUF paths.  The backend is auto-detected from the identifier,
+or you can use an explicit prefix (ollama:, mlx:, gguf:, vllm-mlx:).</p>
+<p>Examples:
+    # Two MLX quants
+    infer-check compare \
+      mlx-community/Llama-3.1-8B-Instruct-4bit \
+      mlx-community/Llama-3.1-8B-Instruct-8bit</p>
+<div class="highlight"><pre><span></span><code># MLX native vs Ollama GGUF
+infer-check compare \
+  mlx-community/Llama-3.1-8B-Instruct-4bit \
+  ollama:llama3.1:8b-instruct-q4_K_M
+
+# Bartowski GGUF vs Unsloth GGUF (both via Ollama)
+infer-check compare \
+  ollama:bartowski/Llama-3.1-8B-Instruct-GGUF \
+  ollama:unsloth/Llama-3.1-8B-Instruct-GGUF
+</code></pre></div>
+<p><strong>Usage:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>infer-check compare [OPTIONS] MODEL_A MODEL_B
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--prompts</code></td>
+<td>text</td>
+<td>Bundled suite name (e.g. 'reasoning') or path to a .jsonl file.</td>
+<td><code>adversarial-numerics</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>path</td>
+<td>Output directory.</td>
+<td><code>./results/compare/</code></td>
+</tr>
+<tr>
+<td><code>--base-url</code></td>
+<td>text</td>
+<td>Base URL override for HTTP backends. Applied to both models unless they resolve to mlx-lm.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--label-a</code></td>
+<td>text</td>
+<td>Custom label for model A (defaults to auto-derived short name).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--label-b</code></td>
+<td>text</td>
+<td>Custom label for model B (defaults to auto-derived short name).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--report</code> / <code>--no-report</code></td>
+<td>boolean</td>
+<td>Generate an HTML comparison report after the run.</td>
+<td><code>True</code></td>
+</tr>
+<tr>
+<td><code>--max-tokens</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Override default max tokens for generation.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--num-prompts</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Limit number of prompts to use.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>boolean</td>
+<td>Show this message and exit.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="determinism">determinism</h2>
+<p>Test whether a backend produces identical outputs across repeated runs at temperature=0.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>infer-check determinism [OPTIONS]
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--model</code></td>
+<td>text</td>
+<td>Model ID or HuggingFace path.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--backend</code></td>
+<td>text</td>
+<td>Backend type (auto-detected if omitted).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--prompts</code></td>
+<td>text</td>
+<td>Bundled suite name (e.g. 'reasoning') or path to a .jsonl file.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>path</td>
+<td>Output directory.</td>
+<td><code>./results/determinism/</code></td>
+</tr>
+<tr>
+<td><code>--runs</code></td>
+<td>integer</td>
+<td>Number of runs per prompt.</td>
+<td><code>100</code></td>
+</tr>
+<tr>
+<td><code>--base-url</code></td>
+<td>text</td>
+<td>Base URL for HTTP backends.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--max-tokens</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Override default max tokens for generation.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--num-prompts</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Limit number of prompts to use.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>boolean</td>
+<td>Show this message and exit.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="diff_1">diff</h2>
+<p>Compare outputs across different backends for the same model and prompts.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>infer-check diff [OPTIONS]
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--model</code></td>
+<td>text</td>
+<td>Model ID or HuggingFace path.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--backends</code></td>
+<td>text</td>
+<td>Comma-separated backend names, e.g. 'mlx-lm,llama-cpp'. First is baseline.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--prompts</code></td>
+<td>text</td>
+<td>Bundled suite name (e.g. 'reasoning') or path to a .jsonl file.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>path</td>
+<td>Output directory.</td>
+<td><code>./results/diff/</code></td>
+</tr>
+<tr>
+<td><code>--quant</code></td>
+<td>text</td>
+<td>Quantization level applied to all backends.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--base-urls</code></td>
+<td>text</td>
+<td>Comma-separated base URLs for HTTP backends (positionally matched to --backends).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--chat</code> / <code>--no-chat</code></td>
+<td>boolean</td>
+<td>Use /v1/chat/completions for HTTP backends (applies chat template server-side).</td>
+<td><code>True</code></td>
+</tr>
+<tr>
+<td><code>--max-tokens</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Override default max tokens for generation.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--num-prompts</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Limit number of prompts to use.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>boolean</td>
+<td>Show this message and exit.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="report">report</h2>
+<p>Generate a report from previously saved result JSON files.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>infer-check report [OPTIONS] RESULTS_DIR
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--format</code></td>
+<td>choice (<code>html</code> &#x7C; <code>json</code>)</td>
+<td>Output format.</td>
+<td><code>html</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>path</td>
+<td>Output file path (defaults to <results_dir>/report.html or report.json).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>boolean</td>
+<td>Show this message and exit.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="stress">stress</h2>
+<p>Stress-test a backend with varying concurrency levels.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>infer-check stress [OPTIONS]
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--model</code></td>
+<td>text</td>
+<td>Model ID or HuggingFace path.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--backend</code></td>
+<td>text</td>
+<td>Backend type (auto-detected if omitted).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--prompts</code></td>
+<td>text</td>
+<td>Bundled suite name (e.g. 'reasoning') or path to a .jsonl file.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>path</td>
+<td>Output directory.</td>
+<td><code>./results/stress/</code></td>
+</tr>
+<tr>
+<td><code>--concurrency</code></td>
+<td>text</td>
+<td>Comma-separated concurrency levels.</td>
+<td><code>1,2,4,8,16</code></td>
+</tr>
+<tr>
+<td><code>--base-url</code></td>
+<td>text</td>
+<td>Base URL for HTTP backends.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--max-tokens</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Override default max tokens for generation.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--num-prompts</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Limit number of prompts to use.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>boolean</td>
+<td>Show this message and exit.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="sweep">sweep</h2>
+<p>Run a quantization sweep: compare pre-quantized models against a baseline.</p>
+<p>Each model is a separate HuggingFace repo or local path. The first model
+(or --baseline) is the reference; all others are compared against it.</p>
+<p>Example:</p>
+<div class="highlight"><pre><span></span><code>infer-check sweep \
+  --models &quot;bf16=mlx-community/Llama-3.1-8B-Instruct-bf16,
+            4bit=mlx-community/Llama-3.1-8B-Instruct-4bit,
+            3bit=mlx-community/Llama-3.1-8B-Instruct-3bit&quot; \
+  --prompts reasoning
+</code></pre></div>
+<p><strong>Usage:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>infer-check sweep [OPTIONS]
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--models</code></td>
+<td>text</td>
+<td>Comma-separated label=model_path pairs. Example: 'bf16=mlx-community/Llama-3.1-8B-Instruct-bf16,4bit=mlx-community/Llama-3.1-8B-Instruct-4bit'</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--backend</code></td>
+<td>text</td>
+<td>Backend type (auto-detected if omitted).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--prompts</code></td>
+<td>text</td>
+<td>Bundled suite name (e.g. 'reasoning') or path to a .jsonl file.</td>
+<td><code>Sentinel.UNSET</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>path</td>
+<td>Output directory.</td>
+<td><code>./results/sweep/</code></td>
+</tr>
+<tr>
+<td><code>--baseline</code></td>
+<td>text</td>
+<td>Baseline label (defaults to first in --models).</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--base-url</code></td>
+<td>text</td>
+<td>Base URL for HTTP backends.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--max-tokens</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Override default max tokens for generation.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--num-prompts</code></td>
+<td>integer range (<code>1</code> and above)</td>
+<td>Limit number of prompts to use.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>boolean</td>
+<td>Show this message and exit.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-it-works">How it works</h2>
+<ol>
+<li><strong>Build backends</strong> -- creates a backend instance for each entry in <code>--backends</code>, using the shared <code>--model</code> and optional <code>--quant</code>.</li>
+<li><strong>Baseline pass</strong> -- generates outputs for all prompts using the first backend.</li>
+<li><strong>Test passes</strong> -- generates outputs for all prompts using each remaining backend.</li>
+<li><strong>Compare</strong> -- each test backend's outputs are compared against the baseline, producing per-prompt <code>ComparisonResult</code> objects with severity, text similarity, and flip metadata.</li>
+<li><strong>Summary table</strong> -- groups results by test backend and displays failure rate, flip rate, and mean similarity.</li>
+</ol>
+<h2 id="base-url-matching">Base URL matching</h2>
+<p>The <code>--base-urls</code> option is positionally matched to <code>--backends</code>. Use an empty entry for backends that don't need a URL (e.g., mlx-lm):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>--backends<span class="w"> </span><span class="s2">&quot;mlx-lm,openai-compat&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>--base-urls<span class="w"> </span><span class="s2">&quot;,http://127.0.0.1:8000&quot;</span>
+</code></pre></div>
+<p>This gives mlx-lm no URL (local inference) and openai-compat the vllm-mlx server URL.</p>
+<h2 id="examples">Examples</h2>
+<p>mlx-lm vs vllm-mlx serving layer:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Start vllm-mlx in another terminal:</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># vllm-mlx serve mlx-community/Meta-Llama-3.1-8B-Instruct-4bit --port 8000</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>infer-check<span class="w"> </span>diff<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span>--model<span class="w"> </span>mlx-community/Meta-Llama-3.1-8B-Instruct-4bit<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span>--backends<span class="w"> </span><span class="s2">&quot;mlx-lm,openai-compat&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span>--base-urls<span class="w"> </span><span class="s2">&quot;,http://127.0.0.1:8000&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span>--prompts<span class="w"> </span>reasoning<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">  </span>--output<span class="w"> </span>./results/diff/
+</code></pre></div>
+<p>With raw completions endpoint (no chat template):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>infer-check<span class="w"> </span>diff<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>--model<span class="w"> </span>mlx-community/Meta-Llama-3.1-8B-Instruct-4bit<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span>--backends<span class="w"> </span><span class="s2">&quot;mlx-lm,openai-compat&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span>--base-urls<span class="w"> </span><span class="s2">&quot;,http://127.0.0.1:8000&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span>--prompts<span class="w"> </span>reasoning<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span>--no-chat
+</code></pre></div>
+<h2 id="output">Output</h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>                              Diff Summary
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>┏━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>┃ test_backend  ┃ failures ┃ failure_rate ┃ flip_rate ┃ mean_similarity ┃
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>┡━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>│ openai-compat │        0 │        0.00% │      0.0% │          1.0000 │
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>└───────────────┴──────────┴──────────────┴───────────┴─────────────────┘
+</code></pre></div>
+<p>A 100% similarity with 0% flip rate means the serving layer introduces zero divergence -- any output differences in production come from quantization, not the backend itself.</p>
+<h2 id="output-format">Output format</h2>
+<p>Results are saved as a JSON array of <code>ComparisonResult</code> objects, each containing:</p>
+<ul>
+<li><code>baseline</code> / <code>test</code> -- the <code>InferenceResult</code> from each backend</li>
+<li><code>kl_divergence</code> -- KL(baseline || test) if logprobs are available</li>
+<li><code>token_divergence_index</code> -- first token where the outputs differ</li>
+<li><code>text_similarity</code> -- 0-1 similarity score</li>
+<li><code>is_failure</code> -- true if similarity &lt; 0.5</li>
+<li><code>metadata</code> -- includes severity, flip status, answers, extraction strategy</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "content.code.copy", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
