@@ -63,6 +63,12 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.15.5",
 ]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-click>=0.9.0",
+    "mkdocs-material>=9.7.6",
+    "pymdown-extensions>=10.21.2",
+]
 
 [tool.ruff]
 target-version = "py311"
