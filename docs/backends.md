@@ -4,11 +4,11 @@
 
 ## Overview
 
-| Backend | Type | Default URL | Use case |
-|---------|------|-------------|----------|
-| **mlx-lm** | In-process | (local) | Local Apple Silicon inference with logprobs |
-| **llama.cpp** | HTTP | `http://127.0.0.1:8080` | llama-server via `/completion` endpoint |
-| **vllm-mlx** | HTTP | `http://127.0.0.1:8000` | Continuous batching on Apple Silicon |
+| Backend           | Type | Default URL | Use case |
+|-------------------|------|-------------|----------|
+| **mlx-lm**        | In-process | (local) | Local Apple Silicon inference with logprobs |
+| **llama-cpp**     | HTTP | `http://127.0.0.1:8080` | llama-server via `/completion` endpoint |
+| **vllm-mlx**      | HTTP | `http://127.0.0.1:8000` | Continuous batching on Apple Silicon |
 | **openai-compat** | HTTP | `http://127.0.0.1:11434/v1` | Any OpenAI-compatible server (vLLM, SGLang, Ollama) |
 
 ## mlx-lm

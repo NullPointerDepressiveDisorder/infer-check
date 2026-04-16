@@ -92,11 +92,11 @@ mlx-lm vs vllm-mlx at temperature=0: 50/50 identical (reasoning) and 30/30 ident
 
 ## Supported backends
 
-| Backend | Type | Use case |
-| --- | --- | --- |
-| **mlx-lm** | In-process | Local Apple Silicon inference with logprobs |
-| **llama.cpp** | HTTP | `llama-server` via `/completion` endpoint |
-| **vllm-mlx** | HTTP | Continuous batching on Apple Silicon |
+| Backend           | Type | Use case |
+|-------------------| --- | --- |
+| **mlx-lm**        | In-process | Local Apple Silicon inference with logprobs |
+| **llama-cpp**     | HTTP | `llama-server` via `/completion` endpoint |
+| **vllm-mlx**      | HTTP | Continuous batching on Apple Silicon |
 | **openai-compat** | HTTP | Any OpenAI-compatible server (vLLM, SGLang, Ollama) |
 
 See the [backends documentation](https://nullpointerdepressivedisorder.github.io/infer-check/backends/) for setup and configuration details.
