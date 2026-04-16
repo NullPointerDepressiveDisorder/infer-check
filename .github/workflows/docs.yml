@@ -20,4 +20,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install mkdocs-material mkdocs-click
+      - run: pip install ".[all]"
       - run: mkdocs gh-deploy --force
