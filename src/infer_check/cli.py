@@ -384,14 +384,12 @@ def compare(
         model_id=resolved_a.model_id,
         quantization=resolved_a.label,
         base_url=resolved_a.base_url,
-        extra={"chat": False},
     )
     config_b = BackendConfig(
         backend_type=resolved_b.backend,
         model_id=resolved_b.model_id,
         quantization=resolved_b.label,
         base_url=resolved_b.base_url,
-        extra={"chat": False},
     )
     backend_a = get_backend(config_a)
     backend_b = get_backend(config_b)

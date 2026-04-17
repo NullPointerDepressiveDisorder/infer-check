@@ -9,7 +9,7 @@
 | **mlx-lm**        | In-process | (local) | Local Apple Silicon inference with logprobs |
 | **llama-cpp**     | HTTP | `http://127.0.0.1:8080` | llama-server via `/completion` endpoint |
 | **vllm-mlx**      | HTTP | `http://127.0.0.1:8000` | Continuous batching on Apple Silicon |
-| **openai-compat** | HTTP | `http://127.0.0.1:11434/v1` | Any OpenAI-compatible server (vLLM, SGLang, Ollama) |
+| **openai-compat** | HTTP | `http://127.0.0.1:11434` | Any OpenAI-compatible server (vLLM, SGLang, Ollama) |
 
 ## mlx-lm
 
@@ -109,7 +109,7 @@ Generic backend for any server that implements the OpenAI API format. Works with
 
 | Model source | Default URL |
 |-------------|-------------|
-| Ollama tags (e.g., `llama3.1:8b`) | `http://127.0.0.1:11434/v1` |
+| Ollama tags (e.g., `llama3.1:8b`) | `http://127.0.0.1:11434` |
 | Custom server | Use `--base-url` |
 
 **Example with Ollama**:

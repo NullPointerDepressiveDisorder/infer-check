@@ -34,7 +34,7 @@ _PREFIX_MAP: dict[str, BackendType] = {
 
 # Default base URLs per backend (can be overridden via CLI).
 _DEFAULT_URLS: dict[BackendType, str] = {
-    "openai-compat": "http://127.0.0.1:11434/v1",  # Ollama
+    "openai-compat": "http://127.0.0.1:11434",  # Ollama (backend adds /v1/... paths)
     "llama-cpp": "http://127.0.0.1:8080",
     "vllm-mlx": "http://127.0.0.1:8000",
 }

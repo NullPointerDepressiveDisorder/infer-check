@@ -66,20 +66,20 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
         return VLLMMLXBackend(
             model_id=config.model_id,
             base_url=url,
-            chat=config.extra.get("chat", False),
+            chat=config.extra.get("chat", True),
         )
     elif config.backend_type == "openai-compat":
         from infer_check.backends.openai_compat import OpenAICompatBackend
 
         if not config.base_url:
             raise ValueError(
-                "openai-compat backend requires --base-url. Example: --base-url http://127.0.0.1:11434/v1 (Ollama)"
+                "openai-compat backend requires --base-url. Example: --base-url http://127.0.0.1:11434 (Ollama)"
             )
         return OpenAICompatBackend(
             base_url=config.base_url,
             model_id=config.model_id,
             api_key=config.extra.get("api_key"),
-            chat=config.extra.get("chat", False),
+            chat=config.extra.get("chat", True),
         )
     else:
         supported = ", ".join(["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"])

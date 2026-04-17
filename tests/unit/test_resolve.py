@@ -14,7 +14,7 @@ class TestExplicitPrefix:
         r = resolve_model("ollama:llama3.1:8b-instruct-q4_K_M")
         assert r.backend == "openai-compat"
         assert r.model_id == "llama3.1:8b-instruct-q4_K_M"
-        assert r.base_url == "http://127.0.0.1:11434/v1"
+        assert r.base_url == "http://127.0.0.1:11434"
         assert r.label == "llama3.1:8b-instruct-q4_K_M"
 
     def test_mlx_prefix(self) -> None:
@@ -67,7 +67,7 @@ class TestHeuristicDetection:
     def test_ollama_style_tag(self) -> None:
         r = resolve_model("llama3.1:8b-instruct-q4_K_M")
         assert r.backend == "openai-compat"
-        assert r.base_url == "http://127.0.0.1:11434/v1"
+        assert r.base_url == "http://127.0.0.1:11434"
 
     def test_local_gguf_path(self, tmp_path: Path) -> None:
         gguf_file = tmp_path / "model-q4.gguf"
