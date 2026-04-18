@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from infer_check.types import InferenceResult, Prompt
-from infer_check.utils import format_prompt
+from infer_check.utils import format_prompt, strip_thinking_tokens
 
 __all__ = ["OpenAICompatBackend"]
 
@@ -44,12 +44,19 @@ class OpenAICompatBackend:
         api_key: str | None = None,
         chat: bool = False,
         revision: str | None = None,
+        disable_thinking: bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model_id = model_id
         self._api_key = api_key
         self._chat = chat
         self._revision = revision
+        self._disable_thinking = disable_thinking
+        # Ollama listens on :11434 by default. When we're talking to Ollama and
+        # thinking is disabled, we prepend "/no_think" to the user message — a
+        # directive that Qwen3 and some Gemma/Ollama templates honour even when
+        # the top-level `think` field is ignored.
+        self._is_ollama = ":11434" in self._base_url
 
         headers: dict[str, str] = {}
         if api_key:
@@ -63,6 +70,9 @@ class OpenAICompatBackend:
 
         # Logprobs support: assume yes until a server rejects it.
         self._chat_logprobs_supported: bool = True
+        # Thinking-disable keys are opportunistic: most servers accept them,
+        # some reject unknown params with 400/422. We drop them on first failure.
+        self._thinking_keys_supported: bool = True
 
     # ------------------------------------------------------------------
     # BackendAdapter protocol
@@ -118,25 +128,59 @@ class OpenAICompatBackend:
         request fails with 400 or 422 (unsupported parameter), the backend
         automatically retries without logprobs and disables them for
         all subsequent requests.
+
+        When ``disable_thinking`` is set and the server is Ollama, we route
+        through Ollama's native ``/api/chat`` endpoint instead — it's the only
+        one that reliably honours ``think: false`` across Ollama's model zoo
+        (gpt-oss, Qwen3, Gemma-thinking, …). This trades away logprobs, which
+        the native endpoint doesn't expose.
         """
+        if self._disable_thinking and self._is_ollama:
+            return await self._generate_ollama_native(prompt)
+
+        user_text = strip_thinking_tokens(prompt.text) if self._disable_thinking else prompt.text
+        messages: list[dict[str, str]] = []
+        if self._disable_thinking:
+            # Empty system message overrides any server-side SYSTEM default
+            # (Ollama Modelfile SYSTEM, hosted-template system prompts, …)
+            # that might re-inject a thinking trigger token.
+            messages.append({"role": "system", "content": ""})
+        messages.append({"role": "user", "content": user_text})
         payload: dict[str, object] = {
             "model": self._model_id,
-            "messages": [{"role": "user", "content": prompt.text}],
+            "messages": messages,
             "max_tokens": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
         }
         if self._chat_logprobs_supported:
             payload["logprobs"] = True
             payload["top_logprobs"] = 5
+        if self._disable_thinking and self._thinking_keys_supported:
+            # Cross-backend hints for disabling reasoning/thinking mode:
+            #   chat_template_kwargs.enable_thinking — vLLM / SGLang / Qwen3 family
+            #   chat_template_kwargs.thinking        — some DeepSeek / HunYuan templates
+            #   think                                — Ollama native flag
+            #   reasoning.enabled / reasoning_effort — OpenRouter / OpenAI-style
+            payload["chat_template_kwargs"] = {"enable_thinking": False, "thinking": False}
+            payload["think"] = False
+            payload["reasoning"] = {"enabled": False}
+            payload["reasoning_effort"] = "minimal"
 
         try:
             elapsed_s, data = await self._post_chat(payload)
         except _ServerHTTPError as exc:
-            # Retry without logprobs only on 400/422 (unsupported parameter).
-            if self._chat_logprobs_supported and exc.status_code in (400, 422):
-                self._chat_logprobs_supported = False
-                payload.pop("logprobs", None)
-                payload.pop("top_logprobs", None)
+            # Retry shedding unsupported params only on 400/422.
+            if exc.status_code in (400, 422) and (self._chat_logprobs_supported or self._thinking_keys_supported):
+                if self._chat_logprobs_supported:
+                    self._chat_logprobs_supported = False
+                    payload.pop("logprobs", None)
+                    payload.pop("top_logprobs", None)
+                if self._thinking_keys_supported:
+                    self._thinking_keys_supported = False
+                    payload.pop("chat_template_kwargs", None)
+                    payload.pop("think", None)
+                    payload.pop("reasoning", None)
+                    payload.pop("reasoning_effort", None)
                 elapsed_s, data = await self._post_chat(payload)
             else:
                 raise
@@ -211,9 +255,76 @@ class OpenAICompatBackend:
             tokens_per_second=tps,
         )
 
+    async def _generate_ollama_native(self, prompt: Prompt) -> InferenceResult:
+        """POST to Ollama's native ``/api/chat`` with ``think: false``.
+
+        Unlike ``/v1/chat/completions``, Ollama's native endpoint consistently
+        respects the ``think`` flag — vital for Gemma-thinking, gpt-oss, and
+        other variants whose Modelfile TEMPLATE hardcodes the thinking trigger.
+        No logprobs are exposed by this endpoint.
+        """
+        user_text = strip_thinking_tokens(prompt.text)
+        payload: dict[str, Any] = {
+            "model": self._model_id,
+            "messages": [
+                {"role": "system", "content": ""},
+                {"role": "user", "content": user_text},
+            ],
+            "stream": False,
+            "think": False,
+            "options": {
+                "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
+                "num_predict": prompt.max_tokens,
+            },
+        }
+
+        start = time.perf_counter()
+        try:
+            response = await self._client.post("/api/chat", json=payload)
+            response.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise RuntimeError(
+                f"Cannot connect to Ollama at {self._base_url}. Ensure `ollama serve` is running."
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(f"Request to {self._base_url}/api/chat timed out after 120s.") from exc
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(f"Ollama returned HTTP {exc.response.status_code}: {exc.response.text[:500]}") from exc
+
+        elapsed_s = time.perf_counter() - start
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise RuntimeError(f"Ollama returned non-JSON response: {response.text[:200]}") from exc
+
+        message = data.get("message") or {}
+        text: str = message.get("content", "") or ""
+        tokens = text.split()
+        completion_tokens = data.get("eval_count", len(tokens))
+        tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
+
+        return InferenceResult(
+            prompt_id=prompt.id,
+            backend_name=self.name,
+            model_id=self._model_id,
+            tokens=tokens,
+            logprobs=None,
+            distributions=None,
+            distribution_metadata=None,
+            text=text,
+            latency_ms=elapsed_s * 1000,
+            tokens_per_second=tps,
+        )
+
     async def _generate_completions(self, prompt: Prompt) -> InferenceResult:
         """Use the legacy ``/v1/completions`` endpoint for raw logprobs."""
-        formatted = format_prompt(prompt.text, model_id=self._model_id, revision=self._revision)
+        formatted = format_prompt(
+            prompt.text,
+            model_id=self._model_id,
+            revision=self._revision,
+            disable_thinking=self._disable_thinking,
+        )
         payload = {
             "model": self._model_id,
             "prompt": formatted,

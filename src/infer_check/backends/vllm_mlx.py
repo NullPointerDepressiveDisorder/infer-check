@@ -23,12 +23,14 @@ class VLLMMLXBackend(OpenAICompatBackend):
         base_url: str = "http://127.0.0.1:8000",
         api_key: str | None = None,
         chat: bool = False,
+        disable_thinking: bool = True,
     ) -> None:
         super().__init__(
             base_url=base_url,
             model_id=model_id,
             api_key=api_key,
             chat=chat,
+            disable_thinking=disable_thinking,
         )
 
     @property

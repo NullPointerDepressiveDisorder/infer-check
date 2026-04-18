@@ -20,7 +20,10 @@ async def test_llama_cpp_includes_model_in_payload() -> None:
     )
 
     try:
-        with patch("httpx.AsyncClient.post", return_value=mock_response) as mock_post:
+        with (
+            patch("infer_check.backends.llama_cpp.format_prompt", return_value="Hello"),
+            patch("httpx.AsyncClient.post", return_value=mock_response) as mock_post,
+        ):
             res = await backend.generate(prompt)
 
             # Verify the call to post

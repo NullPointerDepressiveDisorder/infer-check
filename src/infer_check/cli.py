@@ -33,6 +33,19 @@ def common_options(f: F) -> F:
             type=click.IntRange(min=1, clamp=True),
             help="Limit number of prompts to use.",
         ),
+        click.option(
+            "--disable-thinking/--enable-thinking",
+            "disable_thinking",
+            default=True,
+            show_default=True,
+            help=(
+                "Suppress reasoning/thinking mode on models that support it "
+                "(Qwen3, DeepSeek-R1, Ollama think, vLLM chat_template_kwargs, "
+                "OpenAI/OpenRouter reasoning). Models without a thinking mode "
+                "are unaffected. Defaults to disabled so outputs are directly "
+                "comparable across runs; pass --enable-thinking to restore it."
+            ),
+        ),
     ]
     for option in reversed(options):
         f = option(f)
@@ -137,6 +150,7 @@ def sweep(
     base_url: str | None,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
 ) -> None:
     """Run a quantization sweep: compare pre-quantized models against a baseline.
 
@@ -192,6 +206,7 @@ def sweep(
             backend_type=backend,
             base_url=base_url,
             quantization=label,
+            disable_thinking=disable_thinking,
         )
 
     runner = TestRunner()
@@ -335,6 +350,7 @@ def compare(
     report: bool,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
 ) -> None:
     """Compare two quantizations of the same model.
 
@@ -384,12 +400,14 @@ def compare(
         model_id=resolved_a.model_id,
         quantization=resolved_a.label,
         base_url=resolved_a.base_url,
+        disable_thinking=disable_thinking,
     )
     config_b = BackendConfig(
         backend_type=resolved_b.backend,
         model_id=resolved_b.model_id,
         quantization=resolved_b.label,
         base_url=resolved_b.base_url,
+        disable_thinking=disable_thinking,
     )
     backend_a = get_backend(config_a)
     backend_b = get_backend(config_b)
@@ -590,6 +608,7 @@ def diff(
     chat: bool,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
 ) -> None:
     """Compare outputs across different backends for the same model and prompts."""
     from infer_check.backends.base import BackendConfig, get_backend
@@ -612,6 +631,7 @@ def diff(
             model_id=model,
             quantization=quant,
             base_url=url,
+            disable_thinking=disable_thinking,
             extra={"chat": chat} if name in ("openai-compat", "vllm-mlx") else {},
         )
         backend_instances.append(get_backend(config))
@@ -711,6 +731,7 @@ def stress(
     base_url: str | None,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
 ) -> None:
     """Stress-test a backend with varying concurrency levels."""
     from infer_check.backends.base import get_backend_for_model
@@ -724,6 +745,7 @@ def stress(
         model_str=model,
         backend_type=backend,
         base_url=base_url,
+        disable_thinking=disable_thinking,
     )
 
     console.print(
@@ -800,6 +822,7 @@ def determinism(
     base_url: str | None,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
 ) -> None:
     """Test whether a backend produces identical outputs across repeated runs at temperature=0."""
     from infer_check.backends.base import get_backend_for_model
@@ -811,6 +834,7 @@ def determinism(
         model_str=model,
         backend_type=backend,
         base_url=base_url,
+        disable_thinking=disable_thinking,
     )
 
     console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")

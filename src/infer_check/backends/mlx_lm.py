@@ -20,10 +20,17 @@ class MLXBackend:
     importing this module alone never triggers a heavy download.
     """
 
-    def __init__(self, model_id: str, quantization: str | None = None, revision: str | None = None) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        quantization: str | None = None,
+        revision: str | None = None,
+        disable_thinking: bool = True,
+    ) -> None:
         self._model_id = model_id
         self._quantization = quantization
         self._revision = revision
+        self._disable_thinking = disable_thinking
         self._model: Any = None
         self._tokenizer: Any = None
 
@@ -141,7 +148,12 @@ class MLXBackend:
 
         temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
         sampler = make_sampler(temp=temp)
-        formatted = format_prompt(prompt.text, tokenizer=self._tokenizer, revision=self._revision)
+        formatted = format_prompt(
+            prompt.text,
+            tokenizer=self._tokenizer,
+            revision=self._revision,
+            disable_thinking=self._disable_thinking,
+        )
         start = time.perf_counter()
         text: str = mlx_generate(
             self._model,
@@ -175,7 +187,12 @@ class MLXBackend:
 
         temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
         sampler = make_sampler(temp=temp)
-        formatted = format_prompt(prompt.text, tokenizer=self._tokenizer, revision=self._revision)
+        formatted = format_prompt(
+            prompt.text,
+            tokenizer=self._tokenizer,
+            revision=self._revision,
+            disable_thinking=self._disable_thinking,
+        )
         input_ids = mx.array(self._tokenizer.encode(formatted))
 
         # Configurable top-K to avoid memory explosion. Default to 10.

@@ -43,6 +43,7 @@ class BackendConfig(BaseModel):
     quantization: str | None = None
     hf_revision: str | None = None
     base_url: str | None = None
+    disable_thinking: bool = True
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -55,12 +56,18 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
             model_id=config.model_id,
             quantization=config.quantization,
             revision=config.hf_revision,
+            disable_thinking=config.disable_thinking,
         )
     elif config.backend_type == "llama-cpp":
         from infer_check.backends.llama_cpp import LlamaCppBackend
 
         url = config.base_url or "http://127.0.0.1:8080"
-        return LlamaCppBackend(model_id=config.model_id, base_url=url, revision=config.hf_revision)
+        return LlamaCppBackend(
+            model_id=config.model_id,
+            base_url=url,
+            revision=config.hf_revision,
+            disable_thinking=config.disable_thinking,
+        )
     elif config.backend_type == "vllm-mlx":
         from infer_check.backends.vllm_mlx import VLLMMLXBackend
 
@@ -69,6 +76,7 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
             model_id=config.model_id,
             base_url=url,
             chat=config.extra.get("chat", True),
+            disable_thinking=config.disable_thinking,
         )
     elif config.backend_type == "openai-compat":
         from infer_check.backends.openai_compat import OpenAICompatBackend
@@ -83,6 +91,7 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
             api_key=config.extra.get("api_key"),
             chat=config.extra.get("chat", True),
             revision=config.hf_revision,
+            disable_thinking=config.disable_thinking,
         )
     else:
         supported = ", ".join(["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"])
@@ -94,6 +103,7 @@ def get_backend_for_model(
     backend_type: str | None = None,
     base_url: str | None = None,
     quantization: str | None = None,
+    disable_thinking: bool = True,
 ) -> BackendAdapter:
     """Resolve model string to a backend and instantiate it.
 
@@ -110,6 +120,7 @@ def get_backend_for_model(
         base_url=base_url or resolved.base_url,
         quantization=quantization or resolved.label,
         hf_revision=resolved.revision,
+        disable_thinking=disable_thinking,
     )
 
     return get_backend(config)

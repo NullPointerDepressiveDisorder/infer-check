@@ -20,10 +20,17 @@ class LlamaCppBackend:
     Communicates via the ``/completion`` endpoint.
     """
 
-    def __init__(self, model_id: str, base_url: str = "http://127.0.0.1:8080", revision: str | None = None) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        base_url: str = "http://127.0.0.1:8080",
+        revision: str | None = None,
+        disable_thinking: bool = True,
+    ) -> None:
         self._model_id = model_id
         self._base_url = base_url.rstrip("/")
         self._revision = revision
+        self._disable_thinking = disable_thinking
         self._client = httpx.AsyncClient(base_url=self._base_url, timeout=120.0)
 
     # ------------------------------------------------------------------
@@ -36,7 +43,12 @@ class LlamaCppBackend:
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Send a completion request and parse the response."""
-        formatted = format_prompt(prompt.text, model_id=self._model_id, revision=self._revision)
+        formatted = format_prompt(
+            prompt.text,
+            model_id=self._model_id,
+            revision=self._revision,
+            disable_thinking=self._disable_thinking,
+        )
         payload = {
             "model": self._model_id,
             "prompt": formatted,
