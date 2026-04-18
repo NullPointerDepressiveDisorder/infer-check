@@ -41,6 +41,7 @@ class BackendConfig(BaseModel):
     backend_type: Literal["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"]
     model_id: str
     quantization: str | None = None
+    hf_revision: str | None = None
     base_url: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
@@ -53,12 +54,13 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
         return MLXBackend(
             model_id=config.model_id,
             quantization=config.quantization,
+            revision=config.hf_revision,
         )
     elif config.backend_type == "llama-cpp":
         from infer_check.backends.llama_cpp import LlamaCppBackend
 
         url = config.base_url or "http://127.0.0.1:8080"
-        return LlamaCppBackend(model_id=config.model_id, base_url=url)
+        return LlamaCppBackend(model_id=config.model_id, base_url=url, revision=config.hf_revision)
     elif config.backend_type == "vllm-mlx":
         from infer_check.backends.vllm_mlx import VLLMMLXBackend
 
@@ -80,6 +82,7 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
             model_id=config.model_id,
             api_key=config.extra.get("api_key"),
             chat=config.extra.get("chat", True),
+            revision=config.hf_revision,
         )
     else:
         supported = ", ".join(["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"])
@@ -106,6 +109,7 @@ def get_backend_for_model(
         model_id=resolved.model_id,
         base_url=base_url or resolved.base_url,
         quantization=quantization or resolved.label,
+        hf_revision=resolved.revision,
     )
 
     return get_backend(config)

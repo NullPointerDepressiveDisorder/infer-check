@@ -26,6 +26,7 @@ dependencies = [
     "rich>=14.3.3",
     "scipy>=1.17.1",
     "tqdm>=4.67.3",
+    "transformers>=5.3.0",
 ]
 
 [project.optional-dependencies]

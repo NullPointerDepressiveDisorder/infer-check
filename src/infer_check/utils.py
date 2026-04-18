@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from transformers import SentencePieceBackend, TokenizersBackend
+
 
 def sanitize_filename(label: str) -> str:
     """Sanitize a label for safe use in filenames across platforms.
@@ -43,3 +45,25 @@ def sanitize_filename(label: str) -> str:
 
     # Ensure we have something left
     return safe if safe else "model"
+
+
+def format_prompt(
+    text: str,
+    tokenizer: TokenizersBackend | SentencePieceBackend | None = None,
+    model_id: str | None = None,
+    revision: str | None = None,
+) -> str:
+    """Apply chat template client-side.
+
+    Uses an existing tokenizer if provided (mlx-lm path),
+    or loads one from HuggingFace by model_id (HTTP backend path).
+    """
+    if tokenizer is None and model_id:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
+
+    if tokenizer and hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
+        messages = [{"role": "user", "content": text}]
+        return str(tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
+    return text

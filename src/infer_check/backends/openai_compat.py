@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from infer_check.types import InferenceResult, Prompt
+from infer_check.utils import format_prompt
 
 __all__ = ["OpenAICompatBackend"]
 
@@ -42,11 +43,13 @@ class OpenAICompatBackend:
         model_id: str,
         api_key: str | None = None,
         chat: bool = False,
+        revision: str | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model_id = model_id
         self._api_key = api_key
         self._chat = chat
+        self._revision = revision
 
         headers: dict[str, str] = {}
         if api_key:
@@ -210,9 +213,10 @@ class OpenAICompatBackend:
 
     async def _generate_completions(self, prompt: Prompt) -> InferenceResult:
         """Use the legacy ``/v1/completions`` endpoint for raw logprobs."""
+        formatted = format_prompt(prompt.text, model_id=self._model_id, revision=self._revision)
         payload = {
             "model": self._model_id,
-            "prompt": prompt.text,
+            "prompt": formatted,
             "max_tokens": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
             "logprobs": 5,

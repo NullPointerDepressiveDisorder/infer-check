@@ -8,6 +8,7 @@ import time
 from typing import Any, cast
 
 from infer_check.types import InferenceResult, Prompt
+from infer_check.utils import format_prompt
 
 __all__ = ["MLXBackend"]
 
@@ -19,9 +20,10 @@ class MLXBackend:
     importing this module alone never triggers a heavy download.
     """
 
-    def __init__(self, model_id: str, quantization: str | None = None) -> None:
+    def __init__(self, model_id: str, quantization: str | None = None, revision: str | None = None) -> None:
         self._model_id = model_id
         self._quantization = quantization
+        self._revision = revision
         self._model: Any = None
         self._tokenizer: Any = None
 
@@ -132,17 +134,6 @@ class MLXBackend:
         self._model = res[0]
         self._tokenizer = res[1]
 
-    def _format_prompt(self, text: str) -> str:
-        """Apply chat template if the tokenizer has one (Instruct models).
-
-        Raw prompts sent to Instruct models produce undefined behavior that
-        varies across quantization levels, making comparisons meaningless.
-        """
-        if hasattr(self._tokenizer, "apply_chat_template") and self._tokenizer.chat_template is not None:
-            messages = [{"role": "user", "content": text}]
-            return str(self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
-        return text
-
     def _generate_simple(self, prompt: Prompt) -> InferenceResult:
         """Generate using the high-level ``mlx_lm.generate`` API."""
         from mlx_lm import generate as mlx_generate
@@ -150,7 +141,7 @@ class MLXBackend:
 
         temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
         sampler = make_sampler(temp=temp)
-        formatted = self._format_prompt(prompt.text)
+        formatted = format_prompt(prompt.text, tokenizer=self._tokenizer, revision=self._revision)
         start = time.perf_counter()
         text: str = mlx_generate(
             self._model,
@@ -184,7 +175,7 @@ class MLXBackend:
 
         temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
         sampler = make_sampler(temp=temp)
-        formatted = self._format_prompt(prompt.text)
+        formatted = format_prompt(prompt.text, tokenizer=self._tokenizer, revision=self._revision)
         input_ids = mx.array(self._tokenizer.encode(formatted))
 
         # Configurable top-K to avoid memory explosion. Default to 10.
