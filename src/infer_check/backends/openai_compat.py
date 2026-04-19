@@ -132,8 +132,8 @@ class OpenAICompatBackend:
         When ``disable_thinking`` is set and the server is Ollama, we route
         through Ollama's native ``/api/chat`` endpoint instead — it's the only
         one that reliably honours ``think: false`` across Ollama's model zoo
-        (gpt-oss, Qwen3, Gemma-thinking, …). This trades away logprobs, which
-        the native endpoint doesn't expose.
+        (gpt-oss, Qwen3, Gemma-thinking, …). Logprobs are requested via the
+        native ``logprobs`` and ``top_logprobs`` fields.
         """
         if self._disable_thinking and self._is_ollama:
             return await self._generate_ollama_native(prompt)
@@ -261,7 +261,7 @@ class OpenAICompatBackend:
         Unlike ``/v1/chat/completions``, Ollama's native endpoint consistently
         respects the ``think`` flag — vital for Gemma-thinking, gpt-oss, and
         other variants whose Modelfile TEMPLATE hardcodes the thinking trigger.
-        No logprobs are exposed by this endpoint.
+        Logprobs are requested via the ``logprobs`` and ``top_logprobs`` fields.
         """
         user_text = strip_thinking_tokens(prompt.text)
         payload: dict[str, Any] = {
@@ -272,6 +272,8 @@ class OpenAICompatBackend:
             ],
             "stream": False,
             "think": False,
+            "logprobs": True,
+            "top_logprobs": 5,
             "options": {
                 "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
                 "num_predict": prompt.max_tokens,
@@ -300,7 +302,55 @@ class OpenAICompatBackend:
 
         message = data.get("message") or {}
         text: str = message.get("content", "") or ""
-        tokens = text.split()
+
+        # Parse logprobs (Ollama native format) ----------------------------
+        # Ollama returns logprobs at the top level as a list of token entries,
+        # each with {token, logprob, top_logprobs: [{token, logprob}, ...]}.
+        tokens: list[str] = []
+        logprobs_list: list[float] | None = None
+        distributions: list[list[float]] | None = None
+        distribution_metadata: list[dict[str, int | str]] | None = None
+
+        lp_data = data.get("logprobs")
+        if lp_data and isinstance(lp_data, list) and len(lp_data) > 0:
+            tokens = [entry.get("token", "") for entry in lp_data]
+            logprobs_list = []
+            for entry in lp_data:
+                raw = entry.get("logprob")
+                try:
+                    fv = float(raw) if raw is not None else -9999.0
+                except (TypeError, ValueError):
+                    fv = -9999.0
+                if math.isnan(fv):
+                    fv = -9999.0
+                logprobs_list.append(fv)
+
+            distributions = []
+            distribution_metadata = []
+            for entry in lp_data:
+                top = entry.get("top_logprobs", [])
+                if not top:
+                    distributions.append([])
+                    distribution_metadata.append({})
+                    continue
+                sorted_items = sorted(top, key=lambda x: x.get("token", ""))
+                cleaned: list[tuple[str, float]] = []
+                for item in sorted_items:
+                    try:
+                        fv = float(item["logprob"]) if item.get("logprob") is not None else -9999.0
+                    except (TypeError, ValueError):
+                        fv = -9999.0
+                    if math.isnan(fv):
+                        fv = -9999.0
+                    cleaned.append((item.get("token", ""), fv))
+                distributions.append([fv for _, fv in cleaned])
+                meta: dict[str, int | str] = {}
+                for i, (tok, _) in enumerate(cleaned):
+                    meta[f"id_{i}"] = tok
+                distribution_metadata.append(meta)
+        else:
+            tokens = text.split()
+
         completion_tokens = data.get("eval_count", len(tokens))
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
@@ -309,9 +359,9 @@ class OpenAICompatBackend:
             backend_name=self.name,
             model_id=self._model_id,
             tokens=tokens,
-            logprobs=None,
-            distributions=None,
-            distribution_metadata=None,
+            logprobs=logprobs_list,
+            distributions=distributions,
+            distribution_metadata=distribution_metadata,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
