@@ -26,7 +26,6 @@ dependencies = [
     "rich>=14.3.3",
     "scipy>=1.17.1",
     "tqdm>=4.67.3",
-    "transformers>=5.3.0",
 ]
 
 [project.optional-dependencies]
@@ -38,9 +37,12 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.15.5",
 ]
-all = ["infer-check[mlx]", "infer-check[analysis]"]
+all = ["infer-check[mlx]", "infer-check[analysis]", "infer-check[http]"]
 mlx = ["mlx>=0.31.0", "mlx-lm<0.31.0"]
 analysis = ["matplotlib>=3.10.8", "scikit-learn>=1.8.0"]
+http = [
+    "transformers>=5.3.0",
+]
 
 [project.scripts]
 infer-check = "infer_check.cli:main"

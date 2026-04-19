@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
-from typing import Any, cast
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, cast
 
-from transformers import SentencePieceBackend, TokenizersBackend
+if TYPE_CHECKING:
+    from transformers import SentencePieceBackend, TokenizersBackend
 
 # Tokens that trigger reasoning mode on specific model/runner combos. When
 # ``disable_thinking`` is set we strip them from the prompt so that a stray
@@ -66,6 +69,14 @@ def sanitize_filename(label: str) -> str:
     return safe if safe else "model"
 
 
+@lru_cache(maxsize=8)
+def _get_tokenizer(model_id: str, revision: str | None = None) -> Any:
+    """Helper to load and cache HuggingFace tokenizers."""
+    from transformers import AutoTokenizer
+
+    return AutoTokenizer.from_pretrained(model_id, revision=revision)
+
+
 def format_prompt(
     text: str,
     tokenizer: TokenizersBackend | SentencePieceBackend | None = None,
@@ -89,9 +100,13 @@ def format_prompt(
         text = strip_thinking_tokens(text)
 
     if tokenizer is None and model_id:
-        from transformers import AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
+        # Only attempt to load from HF if it looks like a HF repo (owner/name)
+        # or an absolute/relative path. Ollama tags (name:tag) or local GGUF
+        # files should be skipped as they'll fail or hang from_pretrained.
+        is_hf_id = "/" in model_id or (model_id.count(":") == 0 and "." not in model_id)
+        if is_hf_id:
+            with contextlib.suppress(Exception):
+                tokenizer = _get_tokenizer(model_id, revision)
 
     if tokenizer and hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
         messages = [{"role": "user", "content": text}]
