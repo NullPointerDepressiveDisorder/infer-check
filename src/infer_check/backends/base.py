@@ -76,6 +76,7 @@ def get_backend(config: BackendConfig) -> BackendAdapter:
             model_id=config.model_id,
             base_url=url,
             chat=config.extra.get("chat", True),
+            revision=config.hf_revision,
             disable_thinking=config.disable_thinking,
         )
     elif config.backend_type == "openai-compat":

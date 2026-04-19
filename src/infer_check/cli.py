@@ -612,9 +612,13 @@ def diff(
 ) -> None:
     """Compare outputs across different backends for the same model and prompts."""
     from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.resolve import resolve_model
     from infer_check.runner import TestRunner
 
     prompt_list = _load_prompts(ctx, prompts, max_tokens, num_prompts)
+
+    # Resolve the model to handle @revision and ensure correct base URL
+    resolved = resolve_model(model)
 
     backend_names = [b.strip() for b in backends.split(",") if b.strip()]
     url_list: list[str | None] = [u.strip() for u in base_urls.split(",")] if base_urls else [None] * len(backend_names)
@@ -622,15 +626,18 @@ def diff(
     while len(url_list) < len(backend_names):
         url_list.append(None)
 
-    console.print(f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}")
+    console.print(f"[bold cyan]diff[/bold cyan] model={resolved.model_id} backends={backend_names} quant={quant}")
+    if resolved.revision:
+        console.print(f"  revision: {resolved.revision}")
 
     backend_instances = []
     for name, url in zip(backend_names, url_list, strict=True):
         config = BackendConfig(
             backend_type=name,  # type: ignore[arg-type]
-            model_id=model,
+            model_id=resolved.model_id,
             quantization=quant,
-            base_url=url,
+            hf_revision=resolved.revision,
+            base_url=url or (resolved.base_url if name == resolved.backend else None),
             disable_thinking=disable_thinking,
             extra={"chat": chat} if name in ("openai-compat", "vllm-mlx") else {},
         )
@@ -651,7 +658,7 @@ def diff(
     # Persist results
     output.mkdir(parents=True, exist_ok=True)
     ts = int(datetime.now(UTC).timestamp())
-    out_path = output / f"diff_{model.replace('/', '_')}_{ts}.json"
+    out_path = output / f"diff_{resolved.model_id.replace('/', '_')}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [c.model_dump(mode="json") for c in comparisons],
