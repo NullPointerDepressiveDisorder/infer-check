@@ -399,6 +399,7 @@ def compare(
         backend_type=resolved_a.backend,
         model_id=resolved_a.model_id,
         quantization=resolved_a.label,
+        hf_revision=resolved_a.revision,
         base_url=resolved_a.base_url,
         disable_thinking=disable_thinking,
     )
@@ -406,6 +407,7 @@ def compare(
         backend_type=resolved_b.backend,
         model_id=resolved_b.model_id,
         quantization=resolved_b.label,
+        hf_revision=resolved_b.revision,
         base_url=resolved_b.base_url,
         disable_thinking=disable_thinking,
     )

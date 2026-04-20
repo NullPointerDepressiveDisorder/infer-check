@@ -52,10 +52,10 @@ class OpenAICompatBackend:
         self._chat = chat
         self._revision = revision
         self._disable_thinking = disable_thinking
-        # Ollama listens on :11434 by default. When we're talking to Ollama and
-        # thinking is disabled, we prepend "/no_think" to the user message — a
-        # directive that Qwen3 and some Gemma/Ollama templates honour even when
-        # the top-level `think` field is ignored.
+        # Ollama listens on :11434 by default. Track it so later request
+        # handling can apply Ollama-specific chat behavior when thinking is
+        # disabled (for example, using request flags and stripping think
+        # tokens from responses) rather than relying on prompt rewriting.
         self._is_ollama = ":11434" in self._base_url
 
         headers: dict[str, str] = {}
