@@ -121,7 +121,7 @@ class MLXBackend:
 
         repo_or_path = str(model_path) if model_path.exists() else self._model_id
         try:
-            res = load(repo_or_path)
+            res = load(repo_or_path, revision=self._revision)
         except Exception as exc:
             msg = str(exc)
             if "404" in msg or "Repository Not Found" in msg:
