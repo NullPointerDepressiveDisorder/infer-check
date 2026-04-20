@@ -93,26 +93,27 @@ def resolve_model(
     if not spec:
         raise ValueError("Empty model spec")
 
-    revision: str | None = None
-    if "@" in spec and not spec.startswith("@"):
-        # Split on the LAST @ to allow for potential @ in paths if they exist (unlikely but safer)
-        # Actually usually it's repo@rev.
-        spec, revision = spec.rsplit("@", 1)
-
     # ── 1. Check for explicit prefix ─────────────────────────────────
     for prefix, backend in _PREFIX_MAP.items():
         pattern = f"^{re.escape(prefix)}:"
         if re.match(pattern, spec, re.IGNORECASE):
             model_id = spec[len(prefix) + 1 :]
+
+            # Revision is allowed for explicit prefixes
+            actual_revision = None
+            if "@" in model_id and not model_id.startswith("@"):
+                model_id, actual_revision = model_id.rsplit("@", 1)
+
             return ResolvedModel(
                 backend=backend,
                 model_id=model_id,
                 base_url=base_url or _DEFAULT_URLS.get(backend),
                 label=label or _make_label(model_id),
-                revision=revision,
+                revision=actual_revision,
             )
 
     # ── 2. Local .gguf file path ─────────────────────────────────────
+    # If it's a local .gguf path, we don't treat @ as a revision delimiter.
     local_path = Path(spec)
     if local_path.suffix.lower() == ".gguf":
         if local_path.exists():
@@ -121,7 +122,7 @@ def resolve_model(
                 model_id=str(local_path.resolve()),
                 base_url=base_url or _DEFAULT_URLS["llama-cpp"],
                 label=label or local_path.stem,
-                revision=revision,
+                revision=None,
             )
         # Even if it doesn't exist yet, honour the extension.
         return ResolvedModel(
@@ -129,10 +130,15 @@ def resolve_model(
             model_id=spec,
             base_url=base_url or _DEFAULT_URLS["llama-cpp"],
             label=label or local_path.stem,
-            revision=revision,
+            revision=None,
         )
 
     # ── 3. HuggingFace repo heuristics ──────────────────────────────
+    # HF repos CAN have @revision.
+    actual_revision = None
+    if "@" in spec and not spec.startswith("@"):
+        spec, actual_revision = spec.rsplit("@", 1)
+
     spec_lower = spec.lower()
 
     # MLX repos (mlx-community org or -mlx suffix).
@@ -147,7 +153,7 @@ def resolve_model(
             model_id=spec,
             base_url=None,  # mlx-lm loads locally, no URL
             label=label or _make_label(spec),
-            revision=revision,
+            revision=actual_revision,
         )
 
     # GGUF repos (typically served via Ollama or llama-cpp).
@@ -159,7 +165,7 @@ def resolve_model(
             model_id=spec,
             base_url=base_url or _DEFAULT_URLS["llama-cpp"],
             label=label or _make_label(spec),
-            revision=revision,
+            revision=actual_revision,
         )
 
     # ── 4. Ollama-style tags (contain colon but no slash) ────────────
@@ -170,7 +176,7 @@ def resolve_model(
             model_id=spec,
             base_url=base_url or _DEFAULT_URLS["openai-compat"],
             label=label or _make_label(spec),
-            revision=revision,
+            revision=actual_revision,
         )
 
     # ── 5. Fallback — assume mlx-lm (Mac-first user base) ───────────
@@ -179,5 +185,5 @@ def resolve_model(
         model_id=spec,
         base_url=None,
         label=label or _make_label(spec),
-        revision=revision,
+        revision=actual_revision,
     )

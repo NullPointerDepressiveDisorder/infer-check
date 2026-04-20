@@ -74,7 +74,15 @@ def _get_tokenizer(model_id: str, revision: str | None = None) -> Any:
     """Helper to load and cache HuggingFace tokenizers."""
     from transformers import AutoTokenizer
 
-    return AutoTokenizer.from_pretrained(model_id, revision=revision)
+    # We use local_files_only=True to ensure that we don't hang on network
+    # calls if the model isn't actually a HF repo (or if we're offline).
+    # This matches the tightened is_hf_id heuristic in format_prompt.
+    return AutoTokenizer.from_pretrained(
+        model_id,
+        revision=revision,
+        local_files_only=True,
+        trust_remote_code=False,
+    )
 
 
 def format_prompt(
@@ -100,10 +108,10 @@ def format_prompt(
         text = strip_thinking_tokens(text)
 
     if tokenizer is None and model_id:
-        # Only attempt to load from HF if it looks like a HF repo (owner/name)
+        # Only attempt to load from HF if it looks like a HF repo (owner/repo)
         # or an absolute/relative path. Ollama tags (name:tag) or local GGUF
         # files should be skipped as they'll fail or hang from_pretrained.
-        is_hf_id = "/" in model_id or (model_id.count(":") == 0 and "." not in model_id)
+        is_hf_id = "/" in model_id
         if is_hf_id:
             with contextlib.suppress(Exception):
                 tokenizer = _get_tokenizer(model_id, revision)
