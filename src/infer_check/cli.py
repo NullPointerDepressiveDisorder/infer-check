@@ -46,6 +46,16 @@ def common_options(f: F) -> F:
                 "comparable across runs; pass --enable-thinking to restore it."
             ),
         ),
+        click.option(
+            "--chat/--no-chat",
+            default=True,
+            show_default=True,
+            help=(
+                "Use /v1/chat/completions for HTTP backends (applies chat "
+                "template server-side). Pass --no-chat to use raw "
+                "/v1/completions instead. Ignored for mlx-lm."
+            ),
+        ),
     ]
     for option in reversed(options):
         f = option(f)
@@ -151,6 +161,7 @@ def sweep(
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Run a quantization sweep: compare pre-quantized models against a baseline.
 
@@ -207,6 +218,7 @@ def sweep(
             base_url=base_url,
             quantization=label,
             disable_thinking=disable_thinking,
+            chat=chat,
         )
 
     runner = TestRunner()
@@ -351,6 +363,7 @@ def compare(
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Compare two quantizations of the same model.
 
@@ -402,6 +415,7 @@ def compare(
         hf_revision=resolved_a.revision,
         base_url=resolved_a.base_url,
         disable_thinking=disable_thinking,
+        extra={"chat": chat},
     )
     config_b = BackendConfig(
         backend_type=resolved_b.backend,
@@ -410,6 +424,7 @@ def compare(
         hf_revision=resolved_b.revision,
         base_url=resolved_b.base_url,
         disable_thinking=disable_thinking,
+        extra={"chat": chat},
     )
     backend_a = get_backend(config_a)
     backend_b = get_backend(config_b)
@@ -591,12 +606,6 @@ def compare(
     default=None,
     help="Comma-separated base URLs for HTTP backends (positionally matched to --backends).",
 )
-@click.option(
-    "--chat/--no-chat",
-    default=True,
-    show_default=True,
-    help="Use /v1/chat/completions for HTTP backends (applies chat template server-side).",
-)
 @common_options
 @click.pass_context
 def diff(
@@ -607,10 +616,10 @@ def diff(
     output: Path,
     quant: str | None,
     base_urls: str | None,
-    chat: bool,
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Compare outputs across different backends for the same model and prompts."""
     from infer_check.backends.base import BackendConfig, get_backend
@@ -741,6 +750,7 @@ def stress(
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Stress-test a backend with varying concurrency levels."""
     from infer_check.backends.base import get_backend_for_model
@@ -755,6 +765,7 @@ def stress(
         backend_type=backend,
         base_url=base_url,
         disable_thinking=disable_thinking,
+        chat=chat,
     )
 
     console.print(
@@ -832,6 +843,7 @@ def determinism(
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Test whether a backend produces identical outputs across repeated runs at temperature=0."""
     from infer_check.backends.base import get_backend_for_model
@@ -844,6 +856,7 @@ def determinism(
         backend_type=backend,
         base_url=base_url,
         disable_thinking=disable_thinking,
+        chat=chat,
     )
 
     console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")

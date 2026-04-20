@@ -105,6 +105,7 @@ def get_backend_for_model(
     base_url: str | None = None,
     quantization: str | None = None,
     disable_thinking: bool = True,
+    chat: bool = True,
 ) -> BackendAdapter:
     """Resolve model string to a backend and instantiate it.
 
@@ -122,6 +123,7 @@ def get_backend_for_model(
         quantization=quantization or resolved.label,
         hf_revision=resolved.revision,
         disable_thinking=disable_thinking,
+        extra={"chat": chat},
     )
 
     return get_backend(config)
