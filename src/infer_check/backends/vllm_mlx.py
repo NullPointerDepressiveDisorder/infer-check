@@ -23,12 +23,16 @@ class VLLMMLXBackend(OpenAICompatBackend):
         base_url: str = "http://127.0.0.1:8000",
         api_key: str | None = None,
         chat: bool = False,
+        revision: str | None = None,
+        disable_thinking: bool = True,
     ) -> None:
         super().__init__(
             base_url=base_url,
             model_id=model_id,
             api_key=api_key,
             chat=chat,
+            revision=revision,
+            disable_thinking=disable_thinking,
         )
 
     @property
@@ -53,6 +57,7 @@ class VLLMMLXBackend(OpenAICompatBackend):
         cls,
         model_id: str,
         quantization: str | None = None,
+        revision: str | None = None,
         base_url: str = "http://127.0.0.1:8000",
     ) -> VLLMMLXBackend:
         """Create a backend for *model_id*.
@@ -65,11 +70,13 @@ class VLLMMLXBackend(OpenAICompatBackend):
                python -m vllm.entrypoints.openai.api_server \\
                    --model <model_id> \\
                    --quantization <quantization> \\
+                   --revision <revision> \\
                    --port 8000
 
         Args:
             model_id: HuggingFace model identifier.
             quantization: Optional quantization string (e.g. ``"4bit"``).
+            revision: Optional HuggingFace revision (e.g. ``"main"``).
             base_url: Server URL (default ``http://127.0.0.1:8000``).
 
         Returns:
@@ -78,4 +85,5 @@ class VLLMMLXBackend(OpenAICompatBackend):
         return cls(
             model_id=model_id,
             base_url=base_url,
+            revision=revision,
         )

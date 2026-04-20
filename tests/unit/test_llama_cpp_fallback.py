@@ -21,7 +21,10 @@ async def test_llama_cpp_model_id_fallback() -> None:
     )
 
     try:
-        with patch("httpx.AsyncClient.post", return_value=mock_response):
+        with (
+            patch("infer_check.backends.llama_cpp.format_prompt", return_value="Hello"),
+            patch("httpx.AsyncClient.post", return_value=mock_response),
+        ):
             res = await backend.generate(prompt)
 
             # Verify it falls back to backend's model_id instead of "unknown"

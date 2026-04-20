@@ -34,7 +34,7 @@ _PREFIX_MAP: dict[str, BackendType] = {
 
 # Default base URLs per backend (can be overridden via CLI).
 _DEFAULT_URLS: dict[BackendType, str] = {
-    "openai-compat": "http://127.0.0.1:11434/v1",  # Ollama
+    "openai-compat": "http://127.0.0.1:11434",  # Ollama (backend adds /v1/... paths)
     "llama-cpp": "http://127.0.0.1:8080",
     "vllm-mlx": "http://127.0.0.1:8000",
 }
@@ -48,9 +48,13 @@ class ResolvedModel:
     model_id: str
     base_url: str | None
     label: str  # short human-readable label for tables / reports
+    revision: str | None = None
 
     def __str__(self) -> str:
-        return f"{self.label} ({self.backend})"
+        res = f"{self.label} ({self.backend})"
+        if self.revision:
+            res += f" @ {self.revision}"
+        return res
 
 
 def _make_label(model_id: str) -> str:
@@ -81,23 +85,9 @@ def resolve_model(
     Args:
         spec: Model identifier. Can be prefixed (``ollama:model``,
               ``mlx:repo/model``, ``gguf:/path/to/file.gguf``) or bare.
+              Optionally includes a revision after '@' (e.g. ``repo/model@main``).
         base_url: Override the default base URL for HTTP backends.
         label: Override the auto-derived label.
-
-    Returns:
-        A ``ResolvedModel`` with backend, model_id, base_url, and label.
-
-    Raises:
-        ValueError: If the spec is empty or cannot be resolved.
-
-    Examples:
-        >>> r = resolve_model("ollama:llama3.1:8b-instruct-q4_K_M")
-        >>> r.backend
-        'openai-compat'
-
-        >>> r = resolve_model("mlx-community/Llama-3.1-8B-Instruct-4bit")
-        >>> r.backend
-        'mlx-lm'
     """
     spec = spec.strip()
     if not spec:
@@ -108,14 +98,22 @@ def resolve_model(
         pattern = f"^{re.escape(prefix)}:"
         if re.match(pattern, spec, re.IGNORECASE):
             model_id = spec[len(prefix) + 1 :]
+
+            # Revision is allowed for explicit prefixes
+            actual_revision = None
+            if "@" in model_id and not model_id.startswith("@"):
+                model_id, actual_revision = model_id.rsplit("@", 1)
+
             return ResolvedModel(
                 backend=backend,
                 model_id=model_id,
                 base_url=base_url or _DEFAULT_URLS.get(backend),
                 label=label or _make_label(model_id),
+                revision=actual_revision,
             )
 
     # ── 2. Local .gguf file path ─────────────────────────────────────
+    # If it's a local .gguf path, we don't treat @ as a revision delimiter.
     local_path = Path(spec)
     if local_path.suffix.lower() == ".gguf":
         if local_path.exists():
@@ -124,6 +122,7 @@ def resolve_model(
                 model_id=str(local_path.resolve()),
                 base_url=base_url or _DEFAULT_URLS["llama-cpp"],
                 label=label or local_path.stem,
+                revision=None,
             )
         # Even if it doesn't exist yet, honour the extension.
         return ResolvedModel(
@@ -131,9 +130,15 @@ def resolve_model(
             model_id=spec,
             base_url=base_url or _DEFAULT_URLS["llama-cpp"],
             label=label or local_path.stem,
+            revision=None,
         )
 
     # ── 3. HuggingFace repo heuristics ──────────────────────────────
+    # HF repos CAN have @revision.
+    actual_revision = None
+    if "@" in spec and not spec.startswith("@"):
+        spec, actual_revision = spec.rsplit("@", 1)
+
     spec_lower = spec.lower()
 
     # MLX repos (mlx-community org or -mlx suffix).
@@ -148,6 +153,7 @@ def resolve_model(
             model_id=spec,
             base_url=None,  # mlx-lm loads locally, no URL
             label=label or _make_label(spec),
+            revision=actual_revision,
         )
 
     # GGUF repos (typically served via Ollama or llama-cpp).
@@ -159,6 +165,7 @@ def resolve_model(
             model_id=spec,
             base_url=base_url or _DEFAULT_URLS["llama-cpp"],
             label=label or _make_label(spec),
+            revision=actual_revision,
         )
 
     # ── 4. Ollama-style tags (contain colon but no slash) ────────────
@@ -169,6 +176,7 @@ def resolve_model(
             model_id=spec,
             base_url=base_url or _DEFAULT_URLS["openai-compat"],
             label=label or _make_label(spec),
+            revision=actual_revision,
         )
 
     # ── 5. Fallback — assume mlx-lm (Mac-first user base) ───────────
@@ -177,4 +185,5 @@ def resolve_model(
         model_id=spec,
         base_url=None,
         label=label or _make_label(spec),
+        revision=actual_revision,
     )

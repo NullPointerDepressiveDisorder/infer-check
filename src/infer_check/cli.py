@@ -33,6 +33,29 @@ def common_options(f: F) -> F:
             type=click.IntRange(min=1, clamp=True),
             help="Limit number of prompts to use.",
         ),
+        click.option(
+            "--disable-thinking/--enable-thinking",
+            "disable_thinking",
+            default=True,
+            show_default=True,
+            help=(
+                "Suppress reasoning/thinking mode on models that support it "
+                "(Qwen3, DeepSeek-R1, Ollama think, vLLM chat_template_kwargs, "
+                "OpenAI/OpenRouter reasoning). Models without a thinking mode "
+                "are unaffected. Defaults to disabled so outputs are directly "
+                "comparable across runs; pass --enable-thinking to restore it."
+            ),
+        ),
+        click.option(
+            "--chat/--no-chat",
+            default=True,
+            show_default=True,
+            help=(
+                "Use /v1/chat/completions for HTTP backends (applies chat "
+                "template server-side). Pass --no-chat to use raw "
+                "/v1/completions instead. Ignored for mlx-lm."
+            ),
+        ),
     ]
     for option in reversed(options):
         f = option(f)
@@ -137,6 +160,8 @@ def sweep(
     base_url: str | None,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Run a quantization sweep: compare pre-quantized models against a baseline.
 
@@ -192,6 +217,8 @@ def sweep(
             backend_type=backend,
             base_url=base_url,
             quantization=label,
+            disable_thinking=disable_thinking,
+            chat=chat,
         )
 
     runner = TestRunner()
@@ -335,6 +362,8 @@ def compare(
     report: bool,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Compare two quantizations of the same model.
 
@@ -383,15 +412,19 @@ def compare(
         backend_type=resolved_a.backend,
         model_id=resolved_a.model_id,
         quantization=resolved_a.label,
+        hf_revision=resolved_a.revision,
         base_url=resolved_a.base_url,
-        extra={"chat": False},
+        disable_thinking=disable_thinking,
+        extra={"chat": chat},
     )
     config_b = BackendConfig(
         backend_type=resolved_b.backend,
         model_id=resolved_b.model_id,
         quantization=resolved_b.label,
+        hf_revision=resolved_b.revision,
         base_url=resolved_b.base_url,
-        extra={"chat": False},
+        disable_thinking=disable_thinking,
+        extra={"chat": chat},
     )
     backend_a = get_backend(config_a)
     backend_b = get_backend(config_b)
@@ -573,12 +606,6 @@ def compare(
     default=None,
     help="Comma-separated base URLs for HTTP backends (positionally matched to --backends).",
 )
-@click.option(
-    "--chat/--no-chat",
-    default=True,
-    show_default=True,
-    help="Use /v1/chat/completions for HTTP backends (applies chat template server-side).",
-)
 @common_options
 @click.pass_context
 def diff(
@@ -589,15 +616,20 @@ def diff(
     output: Path,
     quant: str | None,
     base_urls: str | None,
-    chat: bool,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Compare outputs across different backends for the same model and prompts."""
     from infer_check.backends.base import BackendConfig, get_backend
+    from infer_check.resolve import resolve_model
     from infer_check.runner import TestRunner
 
     prompt_list = _load_prompts(ctx, prompts, max_tokens, num_prompts)
+
+    # Resolve the model to handle @revision and ensure correct base URL
+    resolved = resolve_model(model)
 
     backend_names = [b.strip() for b in backends.split(",") if b.strip()]
     url_list: list[str | None] = [u.strip() for u in base_urls.split(",")] if base_urls else [None] * len(backend_names)
@@ -605,15 +637,19 @@ def diff(
     while len(url_list) < len(backend_names):
         url_list.append(None)
 
-    console.print(f"[bold cyan]diff[/bold cyan] model={model} backends={backend_names} quant={quant}")
+    console.print(f"[bold cyan]diff[/bold cyan] model={resolved.model_id} backends={backend_names} quant={quant}")
+    if resolved.revision:
+        console.print(f"  revision: {resolved.revision}")
 
     backend_instances = []
     for name, url in zip(backend_names, url_list, strict=True):
         config = BackendConfig(
             backend_type=name,  # type: ignore[arg-type]
-            model_id=model,
+            model_id=resolved.model_id,
             quantization=quant,
-            base_url=url,
+            hf_revision=resolved.revision,
+            base_url=url or (resolved.base_url if name == resolved.backend else None),
+            disable_thinking=disable_thinking,
             extra={"chat": chat} if name in ("openai-compat", "vllm-mlx") else {},
         )
         backend_instances.append(get_backend(config))
@@ -633,7 +669,7 @@ def diff(
     # Persist results
     output.mkdir(parents=True, exist_ok=True)
     ts = int(datetime.now(UTC).timestamp())
-    out_path = output / f"diff_{model.replace('/', '_')}_{ts}.json"
+    out_path = output / f"diff_{resolved.model_id.replace('/', '_')}_{ts}.json"
     out_path.write_text(
         json.dumps(
             [c.model_dump(mode="json") for c in comparisons],
@@ -713,6 +749,8 @@ def stress(
     base_url: str | None,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Stress-test a backend with varying concurrency levels."""
     from infer_check.backends.base import get_backend_for_model
@@ -726,6 +764,8 @@ def stress(
         model_str=model,
         backend_type=backend,
         base_url=base_url,
+        disable_thinking=disable_thinking,
+        chat=chat,
     )
 
     console.print(
@@ -802,6 +842,8 @@ def determinism(
     base_url: str | None,
     max_tokens: int | None,
     num_prompts: int | None,
+    disable_thinking: bool,
+    chat: bool,
 ) -> None:
     """Test whether a backend produces identical outputs across repeated runs at temperature=0."""
     from infer_check.backends.base import get_backend_for_model
@@ -813,6 +855,8 @@ def determinism(
         model_str=model,
         backend_type=backend,
         base_url=base_url,
+        disable_thinking=disable_thinking,
+        chat=chat,
     )
 
     console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")

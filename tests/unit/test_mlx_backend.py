@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from infer_check.backends.mlx_lm import MLXBackend
+from infer_check.utils import format_prompt
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ def test_mlx_chat_template(mock_mlx: tuple[MagicMock, MagicMock, MagicMock]) -> 
     backend._model = mock_mlx[1]
     backend._tokenizer = mock_tokenizer
 
-    formatted = backend._format_prompt("hello")
+    formatted = format_prompt("hello", tokenizer=backend._tokenizer)
     assert formatted == "<chat>hello</chat>"
     mock_tokenizer.apply_chat_template.assert_called_once()
 

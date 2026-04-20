@@ -8,6 +8,7 @@ import time
 from typing import Any, cast
 
 from infer_check.types import InferenceResult, Prompt
+from infer_check.utils import format_prompt
 
 __all__ = ["MLXBackend"]
 
@@ -19,9 +20,17 @@ class MLXBackend:
     importing this module alone never triggers a heavy download.
     """
 
-    def __init__(self, model_id: str, quantization: str | None = None) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        quantization: str | None = None,
+        revision: str | None = None,
+        disable_thinking: bool = True,
+    ) -> None:
         self._model_id = model_id
         self._quantization = quantization
+        self._revision = revision
+        self._disable_thinking = disable_thinking
         self._model: Any = None
         self._tokenizer: Any = None
 
@@ -112,7 +121,7 @@ class MLXBackend:
 
         repo_or_path = str(model_path) if model_path.exists() else self._model_id
         try:
-            res = load(repo_or_path)
+            res = load(repo_or_path, revision=self._revision)
         except Exception as exc:
             msg = str(exc)
             if "404" in msg or "Repository Not Found" in msg:
@@ -132,17 +141,6 @@ class MLXBackend:
         self._model = res[0]
         self._tokenizer = res[1]
 
-    def _format_prompt(self, text: str) -> str:
-        """Apply chat template if the tokenizer has one (Instruct models).
-
-        Raw prompts sent to Instruct models produce undefined behavior that
-        varies across quantization levels, making comparisons meaningless.
-        """
-        if hasattr(self._tokenizer, "apply_chat_template") and self._tokenizer.chat_template is not None:
-            messages = [{"role": "user", "content": text}]
-            return str(self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
-        return text
-
     def _generate_simple(self, prompt: Prompt) -> InferenceResult:
         """Generate using the high-level ``mlx_lm.generate`` API."""
         from mlx_lm import generate as mlx_generate
@@ -150,7 +148,12 @@ class MLXBackend:
 
         temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
         sampler = make_sampler(temp=temp)
-        formatted = self._format_prompt(prompt.text)
+        formatted = format_prompt(
+            prompt.text,
+            tokenizer=self._tokenizer,
+            revision=self._revision,
+            disable_thinking=self._disable_thinking,
+        )
         start = time.perf_counter()
         text: str = mlx_generate(
             self._model,
@@ -184,7 +187,12 @@ class MLXBackend:
 
         temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
         sampler = make_sampler(temp=temp)
-        formatted = self._format_prompt(prompt.text)
+        formatted = format_prompt(
+            prompt.text,
+            tokenizer=self._tokenizer,
+            revision=self._revision,
+            disable_thinking=self._disable_thinking,
+        )
         input_ids = mx.array(self._tokenizer.encode(formatted))
 
         # Configurable top-K to avoid memory explosion. Default to 10.
