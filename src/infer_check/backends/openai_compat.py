@@ -6,7 +6,6 @@ Works with any server that implements the ``/v1/completions`` endpoint
 
 from __future__ import annotations
 
-import asyncio
 import math
 import time
 from typing import Any
@@ -508,9 +507,6 @@ class OpenAICompatBackend(BackendAdapter):
                 "prompt_tokens": usage.get("prompt_tokens"),
             },
         )
-
-    async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        return list(await asyncio.gather(*(self.generate(p) for p in prompts)))
 
     async def health_check(self) -> bool:
         """Verify the server responds to a lightweight models listing."""

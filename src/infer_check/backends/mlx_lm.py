@@ -80,14 +80,6 @@ class MLXBackend(BackendAdapter):
                     f"MLX generation failed for prompt '{prompt.text[:80]}...'\nModel: {self._model_id}\nError: {inner}"
                 ) from inner
 
-    async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        """Generate inference results for a batch of prompts.
-
-        MLX is single-threaded so we run sequentially rather than
-        using ``asyncio.gather`` which would not yield parallelism.
-        """
-        return [await self.generate(p) for p in prompts]
-
     async def health_check(self) -> bool:
         """Load the model and generate a single token."""
         try:

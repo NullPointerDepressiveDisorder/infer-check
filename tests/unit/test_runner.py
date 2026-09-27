@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 from infer_check.backends.base import BackendAdapter
@@ -149,9 +147,6 @@ class StubBackend(BackendAdapter):
             latency_ms=1.0,
             metadata={},
         )
-
-    async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        return await asyncio.gather(*(self.generate(p) for p in prompts))
 
     async def health_check(self) -> bool:
         return True

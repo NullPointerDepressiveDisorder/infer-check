@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import math
 import time
 
@@ -180,9 +179,6 @@ class LlamaCppBackend(BackendAdapter):
                 "prompt_tokens": prompt_tokens,
             },
         )
-
-    async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        return list(await asyncio.gather(*(self.generate(p) for p in prompts)))
 
     async def health_check(self) -> bool:
         """Call ``GET /health`` on the llama-server."""
