@@ -20,6 +20,28 @@ from infer_check.types import (
 from infer_check.utils import sanitize_filename
 
 
+def first_divergence(a: InferenceResult, b: InferenceResult) -> int | None:
+    """Index of the first token where two generations differ, or None if identical.
+
+    Compares token IDs when both results have them (exact). Otherwise falls
+    back to per-token display strings, which can split multi-byte characters
+    and so over-report divergence. If one sequence is a prefix of the other,
+    the divergence index is the shorter length.
+    """
+    seq_a: list[int] | list[str]
+    seq_b: list[int] | list[str]
+    if a.token_ids is not None and b.token_ids is not None:
+        seq_a, seq_b = a.token_ids, b.token_ids
+    else:
+        seq_a, seq_b = a.tokens, b.tokens
+    for i, (x, y) in enumerate(zip(seq_a, seq_b, strict=False)):
+        if x != y:
+            return i
+    if len(seq_a) != len(seq_b):
+        return min(len(seq_a), len(seq_b))
+    return None
+
+
 class TestRunner:
     __test__ = False
 
@@ -105,14 +127,7 @@ class TestRunner:
         else:
             severity = "severe"
 
-        token_divergence_index = None
-        for i, (b_tok, t_tok) in enumerate(zip(baseline.tokens, test.tokens, strict=False)):
-            if b_tok != t_tok:
-                token_divergence_index = i
-                break
-
-        if token_divergence_index is None and len(baseline.tokens) != len(test.tokens):
-            token_divergence_index = min(len(baseline.tokens), len(test.tokens))
+        token_divergence_index = first_divergence(baseline, test)
 
         # KL Divergence computation
         kl_div = None
@@ -665,13 +680,11 @@ class TestRunner:
                     if r.text == first.text:
                         identical_count += 1
                     else:
-                        div_idx = None
-                        for i, (t1, t2) in enumerate(zip(first.tokens, r.tokens, strict=False)):
-                            if t1 != t2:
-                                div_idx = i
-                                break
+                        div_idx = first_divergence(first, r)
                         if div_idx is None:
-                            div_idx = min(len(first.tokens), len(r.tokens))
+                            # Same tokens but different text shouldn't happen; record the
+                            # end of the sequence rather than dropping the divergence.
+                            div_idx = len(first.token_ids or first.tokens)
                         divergence_positions.append(div_idx)
 
                 det_res = DeterminismResult(

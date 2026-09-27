@@ -1,5 +1,9 @@
 # Unreleased
 
+- **Fixed (MLX backend):** generation now uses `mlx_lm.stream_generate`. Previously the backend looped over `generate_step`, which (a) never stopped at the end-of-message token, so outputs ran on into invented extra turns, (b) was capped at 256 tokens regardless of `max_tokens`, and (c) decoded one token at a time, mangling multi-byte characters. Results produced by earlier versions of the MLX backend overstate divergence and should be regenerated.
+- **Fixed (MLX backend):** chat-templated prompts no longer get a second BOS token.
+- **Changed (MLX backend):** removed the silent fallback to `mlx_lm.generate`; generation errors now propagate.
+- Token divergence is computed on token IDs when both results have them.
 - All bundled prompt suites now carry stable IDs (`reasoning-001`, `numerics-001`, …) so results can be joined across runs. Prompts in custom suites without an `id` get one derived from their text instead of a random UUID; duplicate IDs are rejected. `scripts/add_prompt_ids.py` assigns IDs to new prompts.
 - `InferenceResult` gains `token_ids`, and every backend now records `metadata["finish_reason"]` (`"stop"` / `"length"`) and `metadata["prompt_tokens"]` where the server exposes them. llama.cpp requests raw token IDs via `return_tokens`.
 

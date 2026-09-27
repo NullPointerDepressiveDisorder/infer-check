@@ -94,4 +94,7 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -q --tb=short"
+addopts = "-ra -q --tb=short -m 'not slow'"
+markers = [
+    "slow: end-to-end tests against real models (downloads weights). Run with: pytest -m slow",
+]

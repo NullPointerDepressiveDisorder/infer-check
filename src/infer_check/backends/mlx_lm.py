@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import gc
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt
 from infer_check.utils import format_prompt
+
+if TYPE_CHECKING:
+    import mlx.core as mx
 
 __all__ = ["MLXBackend"]
 
@@ -56,42 +59,29 @@ class MLXBackend(BackendAdapter):
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Run inference and return an ``InferenceResult``.
 
-        Uses ``mlx_lm.generate_step`` when available so that per-token
-        logprobs can be captured.  Falls back to the simpler
-        ``mlx_lm.generate`` otherwise.
-
         The computation runs synchronously inside this coroutine and blocks
         the event loop. That is deliberate: MLX generation is single-stream,
         and ``supports_concurrency`` is False so callers don't overlap calls.
         Keep this ``async`` — every caller awaits it.
+
+        There is intentionally no fallback path: if generation fails, the
+        error propagates. A correctness tool must never silently switch to a
+        different way of measuring.
         """
         self._ensure_loaded()
-
         try:
-            return self._generate_with_logprobs(prompt)
+            return self._generate(prompt)
         except Exception as exc:
-            from rich.console import Console
-
-            Console().print(f"[yellow]⚠ generate_step failed, falling back to simple generate: {exc}[/yellow]")
-            try:
-                return self._generate_simple(prompt)
-            except Exception as inner:
-                raise RuntimeError(
-                    f"MLX generation failed for prompt '{prompt.text[:80]}...'\nModel: {self._model_id}\nError: {inner}"
-                ) from inner
+            raise RuntimeError(
+                f"MLX generation failed for prompt '{prompt.id}' ({prompt.text[:80]!r})\n"
+                f"Model: {self._model_id}\nError: {exc}"
+            ) from exc
 
     async def health_check(self) -> bool:
-        """Load the model and generate a single token."""
+        """Load the model and generate a single token through the real code path."""
         try:
             self._ensure_loaded()
-            from mlx_lm import generate as mlx_generate
-
-            mlx_generate(
-                self._model,
-                self._tokenizer,
-                prompt="hi",
-                max_tokens=1,
-            )
+            self._generate(Prompt(id="health-check", text="hi", max_tokens=1))
             return True
         except Exception:
             return False
@@ -146,169 +136,108 @@ class MLXBackend(BackendAdapter):
         self._model = res[0]
         self._tokenizer = res[1]
 
-    def _generate_simple(self, prompt: Prompt) -> InferenceResult:
-        """Generate using the high-level ``mlx_lm.generate`` API."""
-        from mlx_lm import generate as mlx_generate
-        from mlx_lm.sample_utils import make_sampler
-
-        temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
-        sampler = make_sampler(temp=temp)
-        formatted = format_prompt(
+    def _format(self, prompt: Prompt) -> str:
+        """Apply the model's chat template (if any) to the prompt text."""
+        return format_prompt(
             prompt.text,
             tokenizer=self._tokenizer,
             revision=self._revision,
             disable_thinking=self._disable_thinking,
         )
-        start = time.perf_counter()
-        text: str = mlx_generate(
-            self._model,
-            self._tokenizer,
-            prompt=formatted,
-            max_tokens=prompt.max_tokens,
-            sampler=sampler,
-        )
-        elapsed_s = time.perf_counter() - start
 
-        tokens = text.split()
-        tps = len(tokens) / elapsed_s if elapsed_s > 0 else None
+    def _encode(self, formatted: str) -> list[int]:
+        """Encode a (possibly chat-templated) string without adding a second BOS.
 
-        return InferenceResult(
-            prompt_id=prompt.id,
-            backend_name=self.name,
-            model_id=self._model_id,
-            quantization=self._quantization,
-            tokens=tokens,
-            logprobs=None,
-            text=text,
-            latency_ms=elapsed_s * 1000,
-            tokens_per_second=tps,
-            # This fallback path can't tell whether mlx_generate stopped at EOS or
-            # at max_tokens; it is removed entirely in the Phase 1 rewrite.
-            metadata={"finish_reason": None, "prompt_tokens": None},
-        )
+        Chat templates usually emit the BOS token themselves (e.g. Llama 3's
+        ``<|begin_of_text|>``); letting the tokenizer add another one produces
+        an off-distribution double-BOS prompt. Mirrors mlx-lm's own logic in
+        ``stream_generate`` for string prompts.
+        """
+        bos = getattr(self._tokenizer, "bos_token", None)
+        add_special = not (bos and formatted.startswith(bos))
+        return list(self._tokenizer.encode(formatted, add_special_tokens=add_special))
 
-    def _generate_with_logprobs(self, prompt: Prompt) -> InferenceResult:
-        """Generate token-by-token via ``generate_step`` to capture logprobs."""
+    @staticmethod
+    def _top_k(lp: mx.array, k: int) -> tuple[list[float], list[int]]:
+        """Top-``k`` log-probs (descending) and their token IDs from a full-vocab vector."""
         import mlx.core as mx
-        from mlx_lm.generate import generate_step
+
+        k = min(k, int(lp.shape[-1]))
+        idx = mx.argpartition(-lp, kth=k - 1)[:k]
+        vals = lp[idx]
+        order = mx.argsort(-vals)
+        return cast(list[float], vals[order].tolist()), cast(list[int], idx[order].tolist())
+
+    def _generate(self, prompt: Prompt) -> InferenceResult:
+        """Generate via ``mlx_lm.stream_generate``, capturing per-token log-probs.
+
+        ``stream_generate`` (unlike the lower-level ``generate_step``) stops at
+        the model's end-of-sequence tokens, honours ``max_tokens``, and decodes
+        text with a streaming detokenizer so multi-byte characters split across
+        tokens come out intact.
+        """
+        import mlx.core as mx
+        from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
 
-        temp = prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0
-        sampler = make_sampler(temp=temp)
-        formatted = format_prompt(
-            prompt.text,
-            tokenizer=self._tokenizer,
-            revision=self._revision,
-            disable_thinking=self._disable_thinking,
-        )
-        input_ids = mx.array(self._tokenizer.encode(formatted))
+        meta = prompt.metadata or {}
+        temp = float(meta.get("temperature", 0.0))
+        top_k = int(meta.get("top_k_logprobs", 10))
 
-        # Configurable top-K to avoid memory explosion. Default to 10.
-        top_k = prompt.metadata.get("top_k_logprobs", 10) if prompt.metadata else 10
+        prompt_ids = self._encode(self._format(prompt))
 
-        tokens: list[str] = []
         token_ids: list[int] = []
         logprobs: list[float] = []
         distributions: list[list[float]] = []
         distribution_metadata: list[dict[str, int | str]] = []
+        pieces: list[str] = []
+        finish_reason: str | None = None
+
+        def record(token: int, lp: mx.array) -> None:
+            lp = lp.astype(mx.float32)  # bf16/fp16 log-probs lose precision
+            token_ids.append(token)
+            # .item() is typed int | float | complex; lp is float32 so it's a float.
+            logprobs.append(cast(float, lp[token].item()))
+            if top_k > 0:
+                vals, ids = self._top_k(lp, top_k)
+                distributions.append(vals)
+                distribution_metadata.append({f"id_{i}": t for i, t in enumerate(ids)})
 
         start = time.perf_counter()
-
-        for step_idx, (token, logprob_dist) in enumerate(
-            generate_step(
-                prompt=input_ids,
-                model=self._model,
-                sampler=sampler,
-            )
+        for resp in stream_generate(
+            self._model,
+            self._tokenizer,
+            prompt_ids,  # pass IDs so BOS handling is under our control
+            max_tokens=prompt.max_tokens,
+            sampler=make_sampler(temp=temp),
         ):
-            if step_idx >= prompt.max_tokens:
+            # Always keep the text: the final response carries the detokenizer's flush.
+            pieces.append(resp.text)
+            if resp.finish_reason == "stop":
+                # resp.token is the end-of-sequence token itself: not part of the output.
+                finish_reason = "stop"
                 break
-
-            # logprob_dist is an mlx array of full-vocab logprobs.
-            # We only keep top-K to save memory.
-            if top_k > 0:
-                # mx.argpartition is not always available or might be slow for small K.
-                # Since we need to move to CPU anyway for serialization, we can do it there.
-                # But to avoid huge tolist(), we can use mx.topk if available or just move a bit.
-
-                # Clamp K to the vocabulary size to avoid out-of-bounds issues.
-                vocab_size = int(logprob_dist.shape[0])
-                if vocab_size <= 0:
-                    # Nothing to record for this step.
-                    continue
-                effective_top_k = int(top_k)
-                if effective_top_k < 1:
-                    # Should not happen due to the outer condition, but guard defensively.
-                    continue
-                if effective_top_k > vocab_size:
-                    effective_top_k = vocab_size
-
-                if hasattr(mx, "argpartition"):
-                    # Fallback to argpartition which is often available in newer MLX.
-                    top_k_indices = mx.argpartition(-logprob_dist, effective_top_k - 1)[:effective_top_k]
-                    top_k_values = logprob_dist[top_k_indices]
-
-                    # Sort them for consistency since argpartition doesn't guarantee order
-                    sort_idx = mx.argsort(-top_k_values)
-                    top_k_indices = top_k_indices[sort_idx]
-                    top_k_values = top_k_values[sort_idx]
-
-                    dist_list = cast(list[float], top_k_values.tolist())
-                    dist_indices = cast(list[int], top_k_indices.tolist())
-                else:
-                    # CPU/Numpy fallback if MLX lacks both topk and argpartition.
-                    import numpy as np
-
-                    dist_np = np.array(logprob_dist)
-                    top_k_indices_np = np.argpartition(-dist_np, effective_top_k - 1)[:effective_top_k]
-                    top_k_values_np = dist_np[top_k_indices_np]
-
-                    sort_idx_np = np.argsort(-top_k_values_np)
-                    top_k_indices_final = top_k_indices_np[sort_idx_np]
-                    top_k_values_final = top_k_values_np[sort_idx_np]
-
-                    dist_list = cast(list[float], top_k_values_final.tolist())
-                    dist_indices = cast(list[int], top_k_indices_final.tolist())
-
-                distributions.append(dist_list)
-                meta: dict[str, int | str] = {}
-                for i, idx in enumerate(dist_indices):
-                    meta[f"id_{i}"] = int(idx)
-                distribution_metadata.append(meta)
-
-            token_id = int(token)
-            token_ids.append(token_id)
-            token_str = self._tokenizer.decode([token_id])
-            tokens.append(token_str)
-
-            # The logprob of the chosen token (from the full distribution)
-            logprobs.append(float(logprob_dist[token_id]))
-
+            record(int(resp.token), resp.logprobs)
+            if resp.finish_reason == "length":
+                # The last real token is only delivered in this final response.
+                finish_reason = "length"
+                break
         elapsed_s = time.perf_counter() - start
-        text = "".join(tokens)
-        tps = len(tokens) / elapsed_s if elapsed_s > 0 else None
-
-        # Ensure any pending MLX computation is done.
-        mx.eval()
 
         return InferenceResult(
             prompt_id=prompt.id,
             backend_name=self.name,
             model_id=self._model_id,
             quantization=self._quantization,
-            tokens=tokens,
-            token_ids=token_ids or None,
-            logprobs=logprobs if logprobs else None,
-            distributions=distributions if distributions else None,
-            distribution_metadata=distribution_metadata if distribution_metadata else None,
-            text=text,
+            # Per-token display strings only: they can split multi-byte
+            # characters. Use ``token_ids`` / ``text`` for comparisons.
+            tokens=[self._tokenizer.decode([t]) for t in token_ids],
+            token_ids=token_ids,
+            logprobs=logprobs or None,
+            distributions=distributions or None,
+            distribution_metadata=distribution_metadata or None,
+            text="".join(pieces),
             latency_ms=elapsed_s * 1000,
-            tokens_per_second=tps,
-            metadata={
-                # KNOWN BUG (fixed in Phase 1): generate_step never checks for EOS,
-                # so this loop only ever ends on the token budget. Recording that
-                # honestly makes affected results easy to spot.
-                "finish_reason": "length",
-                "prompt_tokens": int(input_ids.size),
-            },
+            tokens_per_second=len(token_ids) / elapsed_s if elapsed_s > 0 else None,
+            metadata={"finish_reason": finish_reason, "prompt_tokens": len(prompt_ids)},
         )
