@@ -1,3 +1,4 @@
+import hashlib
 import json
 from collections import Counter
 from pathlib import Path
@@ -12,12 +13,26 @@ __all__ = ["load_suite", "save_suite"]
 console = Console()
 
 
+def _derived_id(suite_stem: str, text: str) -> str:
+    """Deterministic ID for prompts that don't declare one.
+
+    Based on the prompt text, so it is stable across runs and across
+    reordering of the file (unlike a random UUID or a line number).
+    """
+    digest = hashlib.sha1(text.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    return f"{suite_stem}-{digest}"
+
+
 def load_suite(path: str | Path, num_prompts: int | None = None) -> list[Prompt]:
     """
     Read a JSONL file and validate each line against the Prompt model.
     Logs the count and category distribution via rich.console.
     If num_prompts is provided, selects an approximately equal number
     of prompts from each category.
+
+    Every prompt gets a stable ID: explicit ``"id"`` fields are used as-is
+    (duplicates are an error); prompts without one get an ID derived from
+    their text, so results can be joined across runs.
     """
     path_obj = Path(path)
     if not path_obj.exists():
@@ -25,6 +40,7 @@ def load_suite(path: str | Path, num_prompts: int | None = None) -> list[Prompt]
 
     all_prompts: list[Prompt] = []
     prompts_by_category: dict[str, list[Prompt]] = {}
+    seen_ids: dict[str, int] = {}
 
     with path_obj.open("r", encoding="utf-8") as f:
         for idx, line in enumerate(f, start=1):
@@ -34,16 +50,29 @@ def load_suite(path: str | Path, num_prompts: int | None = None) -> list[Prompt]
 
             try:
                 data = json.loads(line)
+                explicit_id = isinstance(data, dict) and "id" in data
+                if isinstance(data, dict) and not explicit_id and isinstance(data.get("text"), str):
+                    derived = _derived_id(path_obj.stem, data["text"])
+                    # Identical texts without explicit IDs get an occurrence suffix.
+                    candidate, n = derived, 2
+                    while candidate in seen_ids:
+                        candidate, n = f"{derived}-{n}", n + 1
+                    data["id"] = candidate
                 prompt = Prompt.model_validate(data)
-                all_prompts.append(prompt)
-                cat = prompt.category
-                if cat not in prompts_by_category:
-                    prompts_by_category[cat] = []
-                prompts_by_category[cat].append(prompt)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON at {path_obj}:{idx} - {e}") from e
             except ValidationError as e:
                 raise ValueError(f"Invalid Prompt at {path_obj}:{idx} - {e}") from e
+
+            if prompt.id in seen_ids:
+                raise ValueError(
+                    f"Duplicate prompt id '{prompt.id}' at {path_obj}:{idx} "
+                    f"(first used at line {seen_ids[prompt.id]}). Prompt IDs must be unique within a suite."
+                )
+            seen_ids[prompt.id] = idx
+
+            all_prompts.append(prompt)
+            prompts_by_category.setdefault(prompt.category, []).append(prompt)
 
     # Apply num_prompts limit with equal category distribution
     if num_prompts is not None and num_prompts < len(all_prompts):
@@ -55,7 +84,7 @@ def load_suite(path: str | Path, num_prompts: int | None = None) -> list[Prompt]
             # Simple round-robin selection to keep categories equal
             # We iterate through categories and pick one prompt from each until we hit the limit
             # This ensures that even if categories have different sizes, we pick as equally as possible
-            cat_indices = {cat: 0 for cat in categories}
+            cat_indices = dict.fromkeys(categories, 0)
             while len(selected_prompts) < num_prompts:
                 added_in_round = False
                 for cat in categories:

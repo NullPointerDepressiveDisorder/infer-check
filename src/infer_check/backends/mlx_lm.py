@@ -7,13 +7,14 @@ import gc
 import time
 from typing import Any, cast
 
+from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt
 from infer_check.utils import format_prompt
 
 __all__ = ["MLXBackend"]
 
 
-class MLXBackend:
+class MLXBackend(BackendAdapter):
     """Backend adapter for mlx-lm (Apple Silicon local inference).
 
     Lazy-loads the model on the first ``generate()`` call so that
@@ -42,6 +43,16 @@ class MLXBackend:
     def name(self) -> str:
         return "mlx-lm"
 
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def supports_concurrency(self) -> bool:
+        # In-process and synchronous: calls run one at a time and block the
+        # event loop, so concurrent callers get no real overlap.
+        return False
+
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Run inference and return an ``InferenceResult``.
 
@@ -49,8 +60,10 @@ class MLXBackend:
         logprobs can be captured.  Falls back to the simpler
         ``mlx_lm.generate`` otherwise.
 
-        The actual computation is synchronous (MLX is single-threaded),
-        but the method is async to satisfy the ``BackendAdapter`` protocol.
+        The computation runs synchronously inside this coroutine and blocks
+        the event loop. That is deliberate: MLX generation is single-stream,
+        and ``supports_concurrency`` is False so callers don't overlap calls.
+        Keep this ``async`` — every caller awaits it.
         """
         self._ensure_loaded()
 
@@ -177,6 +190,9 @@ class MLXBackend:
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            # This fallback path can't tell whether mlx_generate stopped at EOS or
+            # at max_tokens; it is removed entirely in the Phase 1 rewrite.
+            metadata={"finish_reason": None, "prompt_tokens": None},
         )
 
     def _generate_with_logprobs(self, prompt: Prompt) -> InferenceResult:
@@ -199,6 +215,7 @@ class MLXBackend:
         top_k = prompt.metadata.get("top_k_logprobs", 10) if prompt.metadata else 10
 
         tokens: list[str] = []
+        token_ids: list[int] = []
         logprobs: list[float] = []
         distributions: list[list[float]] = []
         distribution_metadata: list[dict[str, int | str]] = []
@@ -268,6 +285,7 @@ class MLXBackend:
                 distribution_metadata.append(meta)
 
             token_id = int(token)
+            token_ids.append(token_id)
             token_str = self._tokenizer.decode([token_id])
             tokens.append(token_str)
 
@@ -287,10 +305,18 @@ class MLXBackend:
             model_id=self._model_id,
             quantization=self._quantization,
             tokens=tokens,
+            token_ids=token_ids or None,
             logprobs=logprobs if logprobs else None,
             distributions=distributions if distributions else None,
             distribution_metadata=distribution_metadata if distribution_metadata else None,
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                # KNOWN BUG (fixed in Phase 1): generate_step never checks for EOS,
+                # so this loop only ever ends on the token budget. Recording that
+                # honestly makes affected results easy to spot.
+                "finish_reason": "length",
+                "prompt_tokens": int(input_ids.size),
+            },
         )

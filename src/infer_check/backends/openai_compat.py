@@ -13,8 +13,9 @@ from typing import Any
 
 import httpx
 
+from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt
-from infer_check.utils import format_prompt, strip_thinking_tokens
+from infer_check.utils import format_prompt, normalize_finish_reason, strip_thinking_tokens
 
 __all__ = ["OpenAICompatBackend"]
 
@@ -27,7 +28,7 @@ class _ServerHTTPError(RuntimeError):
         super().__init__(f"Server returned HTTP {status_code}: {body}")
 
 
-class OpenAICompatBackend:
+class OpenAICompatBackend(BackendAdapter):
     """Backend adapter for any OpenAI-compatible completion server.
 
     Supports both ``/v1/completions`` (raw) and ``/v1/chat/completions``
@@ -81,6 +82,15 @@ class OpenAICompatBackend:
     @property
     def name(self) -> str:
         return "openai-compat"
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def supports_concurrency(self) -> bool:
+        # HTTP requests genuinely overlap and the server schedules/batches them.
+        return True
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """POST to the completions or chat/completions endpoint."""
@@ -238,7 +248,7 @@ class OpenAICompatBackend:
         else:
             tokens = text.split()
 
-        usage = data.get("usage", {})
+        usage = data.get("usage") or {}
         completion_tokens = usage.get("completion_tokens", len(tokens))
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
@@ -253,6 +263,10 @@ class OpenAICompatBackend:
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                "finish_reason": normalize_finish_reason(choice.get("finish_reason")),
+                "prompt_tokens": usage.get("prompt_tokens"),
+            },
         )
 
     async def _generate_ollama_native(self, prompt: Prompt) -> InferenceResult:
@@ -365,6 +379,11 @@ class OpenAICompatBackend:
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                # Ollama native: done_reason in {"stop", "length", ...}
+                "finish_reason": normalize_finish_reason(data.get("done_reason")),
+                "prompt_tokens": data.get("prompt_eval_count"),
+            },
         )
 
     async def _generate_completions(self, prompt: Prompt) -> InferenceResult:
@@ -469,7 +488,7 @@ class OpenAICompatBackend:
             tokens = text.split()
 
         # Timing -----------------------------------------------------------
-        usage = data.get("usage", {})
+        usage = data.get("usage") or {}
         completion_tokens = usage.get("completion_tokens", len(tokens))
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
@@ -484,6 +503,10 @@ class OpenAICompatBackend:
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                "finish_reason": normalize_finish_reason(choice.get("finish_reason")),
+                "prompt_tokens": usage.get("prompt_tokens"),
+            },
         )
 
     async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:

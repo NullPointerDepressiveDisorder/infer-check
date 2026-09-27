@@ -9,7 +9,7 @@ dynamic = ["version"]
 description = "Correctness and reliability testing for LLM inference engines"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Karan Kunal Mohindroo", email = "karan@karankm.com" }]
 keywords = ["llm", "testing", "correctness", "reliability", "quantization"]
 classifiers = [
@@ -89,7 +89,7 @@ targets = ["src"]
 exclude_dirs = ["tests"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 
 [tool.pytest.ini_options]

@@ -8,13 +8,14 @@ import time
 
 import httpx
 
+from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt
-from infer_check.utils import format_prompt
+from infer_check.utils import format_prompt, normalize_finish_reason
 
 __all__ = ["LlamaCppBackend"]
 
 
-class LlamaCppBackend:
+class LlamaCppBackend(BackendAdapter):
     """Backend adapter for llama.cpp's built-in HTTP server (``llama-server``).
 
     Communicates via the ``/completion`` endpoint.
@@ -41,6 +42,16 @@ class LlamaCppBackend:
     def name(self) -> str:
         return "llama-cpp"
 
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def supports_concurrency(self) -> bool:
+        # HTTP requests genuinely overlap; whether llama-server batches them
+        # depends on its --parallel/-np slot setting.
+        return True
+
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Send a completion request and parse the response."""
         formatted = format_prompt(
@@ -55,6 +66,7 @@ class LlamaCppBackend:
             "n_predict": prompt.max_tokens,
             "temperature": prompt.metadata.get("temperature", 0.0) if prompt.metadata else 0.0,
             "n_probs": 10,  # Request top 10 probabilities for KL divergence
+            "return_tokens": True,  # raw generated token IDs in `tokens` (ignored by older servers)
         }
 
         start = time.perf_counter()
@@ -136,17 +148,37 @@ class LlamaCppBackend:
         if tps is None and tokens:
             tps = len(tokens) / elapsed_s if elapsed_s > 0 else None
 
+        # Stop reason / token accounting ------------------------------------
+        # Newer llama-server: stop_type in {"none", "eos", "limit", "word"}.
+        # Older builds: boolean stopped_eos / stopped_word / stopped_limit.
+        raw_stop = data.get("stop_type")
+        if raw_stop is None:
+            if data.get("stopped_eos") or data.get("stopped_word"):
+                raw_stop = "stop"
+            elif data.get("stopped_limit"):
+                raw_stop = "length"
+        prompt_tokens = data.get("tokens_evaluated", timing.get("prompt_n"))
+        raw_ids = data.get("tokens")
+        token_ids: list[int] | None = None
+        if isinstance(raw_ids, list) and raw_ids and all(isinstance(t, int) for t in raw_ids):
+            token_ids = list(raw_ids)
+
         return InferenceResult(
             prompt_id=prompt.id,
             backend_name=self.name,
             model_id=data.get("model", self._model_id),
             tokens=tokens,
+            token_ids=token_ids,
             logprobs=logprobs,
             distributions=distributions,
             distribution_metadata=distribution_metadata,
             text=content,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                "finish_reason": normalize_finish_reason(raw_stop),
+                "prompt_tokens": prompt_tokens,
+            },
         )
 
     async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:

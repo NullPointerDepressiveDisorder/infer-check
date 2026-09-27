@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from infer_check.backends.base import BackendAdapter
 from infer_check.runner import TestRunner
 from infer_check.types import InferenceResult, Prompt
 
@@ -119,7 +120,7 @@ def test_compare_threshold_edge_cases(runner: TestRunner) -> None:
     assert comp_strict.is_failure is True
 
 
-class StubBackend:
+class StubBackend(BackendAdapter):
     def __init__(self, name: str, responses: dict[str, str]):
         self._name = name
         self._responses = responses
@@ -128,6 +129,14 @@ class StubBackend:
     @property
     def name(self) -> str:
         return self._name
+
+    @property
+    def model_id(self) -> str:
+        return "stub-model"
+
+    @property
+    def supports_concurrency(self) -> bool:
+        return True
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         text = self._responses.get(prompt.id, "Default response")

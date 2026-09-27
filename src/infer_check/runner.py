@@ -234,7 +234,7 @@ class TestRunner:
         """
         baseline_results: dict[str, InferenceResult] = {}
         all_comparisons: list[ComparisonResult] = []
-        failure_counts: dict[str, int] = {q: 0 for q in quantization_levels}
+        failure_counts: dict[str, int] = dict.fromkeys(quantization_levels, 0)
 
         if baseline_quant is None:
             if not quantization_levels:
@@ -606,12 +606,9 @@ class TestRunner:
 
                 output_consistency = consistent_count / max(1, total_compared)
 
-                # Fetch model_id from results or backend config
-                model_id = "unknown"
-                if valid_results:
-                    model_id = valid_results[0].model_id
-                elif hasattr(backend, "config") and hasattr(backend.config, "model_id"):
-                    model_id = backend.config.model_id
+                # Prefer what the server reported; fall back to the backend's own ID
+                # (e.g. when every request at this level errored).
+                model_id = valid_results[0].model_id if valid_results else backend.model_id
 
                 sr = StressResult(
                     model_id=model_id,

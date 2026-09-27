@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,20 +8,37 @@ __all__ = ["BackendAdapter", "BackendConfig", "get_backend", "get_backend_for_mo
 
 
 class BackendAdapter(Protocol):
-    """Protocol defining the interface for all inference backends."""
+    """Interface every inference backend implements.
+
+    Backends subclass this explicitly so mypy checks conformance where each
+    backend is defined: members below with ``...`` bodies are treated as
+    abstract, so forgetting one is a type error rather than a silent ``None``
+    at runtime.
+    """
 
     @property
     def name(self) -> str:
-        """The name of the backend."""
+        """Short backend identifier, e.g. ``"mlx-lm"``."""
+        ...
+
+    @property
+    def model_id(self) -> str:
+        """The model this backend instance serves (repo ID, path, or server-side name)."""
+        ...
+
+    @property
+    def supports_concurrency(self) -> bool:
+        """True only if concurrent ``generate()`` calls genuinely overlap.
+
+        HTTP backends return True (the server schedules/batches requests).
+        In-process backends that block the event loop return False; callers
+        must not rely on overlapping calls to them (e.g. for stress tests).
+        """
         ...
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Generate a single inference result for a prompt."""
         ...
-
-    async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        """Generate inference results for a batch of prompts."""
-        return await asyncio.gather(*(self.generate(prompt) for prompt in prompts))
 
     async def health_check(self) -> bool:
         """Check if the backend is ready and responsive."""

@@ -53,11 +53,24 @@ class Prompt(BaseInferModel):
 
 
 class InferenceResult(BaseInferModel):
+    """One generation from one backend.
+
+    ``metadata`` conventions (set by every backend where the server exposes them):
+      - ``finish_reason``: ``"stop"`` (end-of-message / stop sequence),
+        ``"length"`` (hit max_tokens), another server-specific string, or ``None``
+        if unknown.
+      - ``prompt_tokens``: number of prompt tokens after chat templating, or ``None``.
+    """
+
     prompt_id: str
     backend_name: str
     model_id: str
     quantization: str | None = None
     tokens: list[str]
+    # Token IDs, when the backend exposes them. Prefer these over ``tokens`` for
+    # comparisons: ``tokens`` are per-token display strings and can split
+    # multi-byte characters.
+    token_ids: list[int] | None = None
     logprobs: list[float] | None = None
     distributions: list[list[float]] | None = None
     distribution_metadata: list[dict[str, int | str]] | None = None

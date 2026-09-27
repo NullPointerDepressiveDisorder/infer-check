@@ -1,100 +1,100 @@
-{"text": "What is 47 * 83 + 156 / 12?", "category": "arithmetic", "max_tokens": 256}
-{"text": "If I have 3/7 of a pizza and eat 1/3 of what I have, what fraction of the whole pizza did I eat?", "category": "arithmetic", "max_tokens": 256}
-{"text": "What is the square root of 2 to 10 decimal places?", "category": "precision", "max_tokens": 256}
-{"text": "Calculate: 15! (fifteen factorial)", "category": "arithmetic", "max_tokens": 256}
-{"text": "What is 2^64?", "category": "large_numbers", "max_tokens": 256}
-{"text": "A train leaves Chicago at 2:15 PM traveling at 80 mph. Another leaves Detroit (280 miles away) at 2:45 PM traveling at 95 mph toward Chicago. At what time do they meet?", "category": "word_problem", "max_tokens": 512}
-{"text": "Is 7919 a prime number? Show your reasoning.", "category": "logic", "max_tokens": 512}
-{"text": "If all bloops are razzles, and all razzles are lazzles, are all bloops definitely lazzles?", "category": "logic", "max_tokens": 256}
-{"text": "Three people check into a hotel room that costs $30. They each pay $10. Later the manager realizes the room is only $25 and gives $5 to the bellboy to return. The bellboy keeps $2 and gives $1 back to each person. Now each person paid $9 (total $27), plus the bellboy has $2 = $29. Where is the missing dollar?", "category": "logic", "max_tokens": 512}
-{"text": "Convert the hexadecimal number 0xDEADBEEF to decimal.", "category": "arithmetic", "max_tokens": 256}
-{"text": "What is the sum of all integers from 1 to 1000?", "category": "arithmetic", "max_tokens": 256}
-{"text": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?", "category": "logic", "max_tokens": 256}
-{"text": "If you flip a fair coin 10 times and get heads every time, what is the probability the next flip is heads?", "category": "logic", "max_tokens": 256}
-{"text": "How many times does the digit 7 appear in all numbers from 1 to 1000?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A farmer has 17 sheep. All but 9 die. How many sheep are left?", "category": "logic", "max_tokens": 256}
-{"text": "What is 0.1 + 0.2? Is it exactly 0.3? Explain.", "category": "precision", "max_tokens": 256}
-{"text": "Solve step by step: 8 ÷ 2(2+2) = ?", "category": "arithmetic", "max_tokens": 512}
-{"text": "I have 12 coins. One is counterfeit and lighter than the rest. Using a balance scale, what is the minimum number of weighings needed to find the counterfeit coin?", "category": "logic", "max_tokens": 512}
-{"text": "What is the derivative of x^x with respect to x?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A snail climbs 3 feet up a well each day but slides back 2 feet each night. If the well is 30 feet deep, how many days does it take to escape?", "category": "word_problem", "max_tokens": 512}
-{"text": "What is the 50th term of the Fibonacci sequence?", "category": "arithmetic", "max_tokens": 256}
-{"text": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?", "category": "logic", "max_tokens": 256}
-{"text": "Evaluate the integral of 1/(1+x^2) from 0 to infinity.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "There are 100 lockers in a row, all closed. 100 students walk by. Student 1 opens every locker. Student 2 toggles every 2nd locker. Student 3 toggles every 3rd, and so on. After all 100 students pass, which lockers are open?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Express 0.999... (repeating) as a fraction. Is it equal to 1?", "category": "logic", "max_tokens": 256}
-{"text": "What is 999999 * 999999?", "category": "arithmetic", "max_tokens": 256}
-{"text": "A car travels the first half of a distance at 40 mph and the second half at 60 mph. What is the average speed for the whole trip?", "category": "word_problem", "max_tokens": 256}
-{"text": "In a room of 23 people, what is the probability that at least two share a birthday?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "What is the largest prime number less than 10000?", "category": "arithmetic", "max_tokens": 256}
-{"text": "You have two ropes. Each takes exactly 1 hour to burn, but they burn non-uniformly. How can you measure exactly 45 minutes?", "category": "logic", "max_tokens": 512}
-{"text": "Simplify: (x^2 - 9) / (x^2 - 6x + 9)", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "How many zeros are at the end of 100! (100 factorial)?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Three friends split a dinner bill. The bill is $47.50 plus 20% tip, split evenly. How much does each person pay?", "category": "word_problem", "max_tokens": 256}
-{"text": "What is the angle between the hour and minute hands of a clock at 3:15?", "category": "word_problem", "max_tokens": 256}
-{"text": "Is the statement 'this sentence is false' true or false? Explain the paradox.", "category": "logic", "max_tokens": 512}
-{"text": "Convert 72 degrees Fahrenheit to Celsius, then to Kelvin.", "category": "arithmetic", "max_tokens": 256}
-{"text": "A lily pad doubles in size every day. If it takes 48 days to cover a pond, how many days does it take to cover half the pond?", "category": "logic", "max_tokens": 256}
-{"text": "Calculate the determinant of the matrix [[3,1,4],[1,5,9],[2,6,5]].", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "What is the probability of getting exactly 3 heads in 5 fair coin flips?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "If log_2(x) = 5, what is log_4(x)?", "category": "arithmetic", "max_tokens": 256}
-{"text": "You have a 3-gallon jug and a 5-gallon jug. How do you measure exactly 4 gallons?", "category": "logic", "max_tokens": 512}
-{"text": "What is the GCD of 1071 and 462? Show your work using the Euclidean algorithm.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A store marks up items 40% over cost, then offers a 25% discount. What is the net percentage change from the original cost?", "category": "word_problem", "max_tokens": 256}
-{"text": "How many distinct ways can you arrange the letters in MISSISSIPPI?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Solve: |2x - 5| < 3. Express the solution as an interval.", "category": "arithmetic", "max_tokens": 256}
-{"text": "If you pick 2 cards from a standard deck without replacement, what is the probability both are aces?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "A projectile is launched at 45 degrees with initial velocity 20 m/s. Ignoring air resistance, what is the maximum height? (g = 9.8 m/s²)", "category": "word_problem", "max_tokens": 512}
-{"text": "What is the remainder when 2^1000 is divided by 7?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Three cards are placed face down: a king, a queen, and a jack. You pick one. The dealer reveals one of the remaining cards is a jack. Should you switch your choice?", "category": "logic", "max_tokens": 512}
-{"text": "Compute the cross product of vectors [1,2,3] and [4,5,6].", "category": "arithmetic", "max_tokens": 256}
-{"text": "A box contains 5 red balls and 3 blue balls. You draw two without replacement. What is the probability that both are different colors?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "Solve for all real values of x: x^4 - 5x^2 + 4 = 0. Show your substitution and factoring.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A rectangular garden is 3 times as long as it is wide. Its perimeter is 96 meters. What are its dimensions and area?", "category": "word_problem", "max_tokens": 256}
-{"text": "If f(x) = 2x + 3 and g(x) = x^2 - 1, what is f(g(f(2)))?", "category": "arithmetic", "max_tokens": 256}
-{"text": "You roll three fair dice. What is the probability that all three show different numbers?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "A 10-meter ladder leans against a wall. The bottom is 6 meters from the wall. How high up the wall does the ladder reach? If the bottom slides outward at 0.5 m/s, how fast is the top sliding down when the bottom is 8 meters from the wall?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "How many integers between 1 and 1000 are divisible by 3 or 5 but not both?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "Alice is taller than Bob. Bob is taller than Carol. Dave is shorter than Carol. Eve is taller than Alice. Rank all five from tallest to shortest.", "category": "logic", "max_tokens": 256}
-{"text": "A tank is being filled by Pipe A at 10 gallons/min and drained by Pipe B at 6 gallons/min. The tank holds 500 gallons and starts at 200 gallons. Pipe A runs alone for the first 20 minutes, then both pipes run. When is the tank full?", "category": "word_problem", "max_tokens": 512}
-{"text": "What is the sum of the interior angles of a 13-sided polygon? What about the exterior angles?", "category": "arithmetic", "max_tokens": 256}
-{"text": "Three logicians walk into a bar. The bartender asks 'Does everyone want a drink?' The first logician says 'I don't know.' The second says 'I don't know.' The third says 'Yes.' Explain the reasoning behind each answer.", "category": "logic", "max_tokens": 512}
-{"text": "Estimate how many piano tuners are in Chicago. Show your Fermi estimation reasoning.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Convert the binary number 11011011.10101 to decimal. Show each positional calculation.", "category": "arithmetic", "max_tokens": 256}
-{"text": "A rope is wrapped once around the equator of the Earth (circumference ~40,075 km). If you add 1 meter to the rope and lift it uniformly, how high above the surface does it hover? Is the answer intuitive?", "category": "word_problem", "max_tokens": 512}
-{"text": "In a game, you can double your money with probability 0.6 or lose everything with probability 0.4. Starting with $100, what is the expected value after one round? After two rounds? Is this game worth playing repeatedly?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "What is the next number in the sequence: 1, 1, 2, 3, 5, 8, 13, 21, 34, __? Now what is the next number in: 2, 6, 12, 20, 30, 42, __? Explain the pattern for each.", "category": "logic", "max_tokens": 256}
-{"text": "A circle is inscribed in a square with side length 10. A square is inscribed in that circle. What is the side length and area of the inner square?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "You have 1000 bottles of wine. One is poisoned. You have 10 test subjects. Each subject can drink from any number of bottles simultaneously, and results come back in exactly one round (one day). How many bottles can you test, and how do you identify the poisoned one?", "category": "logic", "max_tokens": 512}
-{"text": "Solve the inequality: (x-1)(x+2)(x-3) > 0. Express the solution as a union of intervals.", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "A car depreciates by 15% each year. If it costs $30,000 new, what is it worth after 5 years? After how many years is it worth less than $10,000?", "category": "word_problem", "max_tokens": 256}
-{"text": "Is it possible to cover an 8x8 chessboard with 2x1 dominoes if two diagonally opposite corners are removed? Prove or disprove.", "category": "logic", "max_tokens": 512}
-{"text": "What is the volume of a sphere with radius 7? What is the surface area? Express both in terms of π and as decimal approximations.", "category": "arithmetic", "max_tokens": 256}
-{"text": "You have a bag with 10 coins: 9 fair coins and 1 double-headed coin. You pick a random coin and flip it 3 times, getting heads each time. What is the probability the coin you picked is the double-headed one? Use Bayes' theorem.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Evaluate the limit: lim (x→0) of (sin(5x))/(3x). Show your reasoning.", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "A shop sells apples for $1.50 each, bananas for $0.75 each, and cherries for $3.00 per bag. I buy some of each and spend exactly $20.25. I buy twice as many bananas as apples. If I buy 3 bags of cherries, how many apples and bananas did I buy?", "category": "word_problem", "max_tokens": 512}
-{"text": "In binary, what is 10110110 AND 11001101? What is 10110110 OR 11001101? What is 10110110 XOR 11001101?", "category": "arithmetic", "max_tokens": 256}
-{"text": "Five pirates find 100 gold coins. They have a strict seniority order and vote on proposals. The most senior proposes a split. If at least half accept, it's done. Otherwise, that pirate is thrown overboard and the next proposes. Each pirate is rational and wants to maximize their coins (and survive). What does the most senior pirate propose?", "category": "logic", "max_tokens": 1024}
-{"text": "A cylindrical can has volume 1000 cm³. What radius and height minimize the surface area? Solve using calculus.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "What is the probability of getting a sum of exactly 15 when rolling four fair six-sided dice?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A invests $5000 at 6% annual interest compounded quarterly. B invests $5000 at 5.9% compounded continuously. After 10 years, who has more money and by how much?", "category": "word_problem", "max_tokens": 512}
-{"text": "How many ways can 8 rooks be placed on an 8x8 chessboard such that no two attack each other?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "You're on a game show. Behind one of three doors is a car. You pick door 1. The host, who knows what's behind each door, opens door 3, revealing a goat. He offers you the chance to switch to door 2. What if there were 100 doors and the host opens 98 goat doors? Should you switch? Explain the generalized probability.", "category": "logic", "max_tokens": 512}
-{"text": "Simplify: (2 + 3i)(4 - i) + (1 + 2i)^2. Express in the form a + bi.", "category": "arithmetic", "max_tokens": 256}
-{"text": "An airplane flies 300 km/h in still air. With a headwind, a round trip of 600 km (300 km each way) takes 2.5 hours. What is the wind speed?", "category": "word_problem", "max_tokens": 512}
-{"text": "You flip a coin until you get two consecutive heads. What is the expected number of flips? Set up and solve the recurrence.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Prove that the sum of any two odd numbers is even. Then prove that the product of any two odd numbers is odd.", "category": "logic", "max_tokens": 256}
-{"text": "How many distinct paths are there from the top-left to the bottom-right of a 6x4 grid if you can only move right or down?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "A rubber ball bounces to 75% of its drop height each time. If dropped from 10 meters, what is the total distance traveled (up and down combined) before it comes to rest? Express as a geometric series and compute.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "What is the expected number of times you must roll a fair die before seeing all six faces at least once? This is the coupon collector problem.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Two adjacent sides of a parallelogram are 12 cm and 8 cm. The angle between them is 60 degrees. Find the area and the length of both diagonals.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A function f satisfies f(x+y) = f(x) * f(y) for all real x, y, and f(1) = 3. What is f(5)? What is f(-2)? What is the general form of f?", "category": "logic", "max_tokens": 256}
-{"text": "Estimate the number of golf balls that can fit inside a school bus. Walk through your dimensional reasoning.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "There are 30 people in a room. What is the probability that at least two share a birthday month? How does this compare to the birthday problem for exact dates?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A clock loses 3 minutes every hour. It is set correctly at noon on Monday. What is the actual time when the clock shows 4:00 PM on Tuesday?", "category": "word_problem", "max_tokens": 256}
-{"text": "What is the minimum number of weighings on a balance scale needed to find one heavier coin among 27 coins, where all others weigh the same? Generalize to n coins.", "category": "logic", "max_tokens": 256}
-{"text": "Solve the recurrence a(n) = a(n-1) + 2a(n-2) with a(0) = 1, a(1) = 1. Find a closed-form using the characteristic equation.", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "A right triangle has legs of length a and b and hypotenuse c. A circle is inscribed in it. What is the radius of the inscribed circle in terms of a, b, and c?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "You have a string of 12 characters over the alphabet {A, B, C}. How many such strings have no two consecutive identical characters?", "category": "chain_of_thought", "max_tokens": 256}
-{"text": "Water flows into a conical tank at 2 cubic meters per minute. The cone has height 10 m and top radius 5 m (vertex at bottom). How fast is the water level rising when the depth is 4 m?", "category": "chain_of_thought", "max_tokens": 512}
-{"text": "Nine dots are arranged in a 3x3 grid. Connect all nine dots using four straight lines without lifting your pen. Describe the solution and explain why most people fail to find it.", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-001", "text": "What is 47 * 83 + 156 / 12?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-002", "text": "If I have 3/7 of a pizza and eat 1/3 of what I have, what fraction of the whole pizza did I eat?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-003", "text": "What is the square root of 2 to 10 decimal places?", "category": "precision", "max_tokens": 256}
+{"id": "reasoning-004", "text": "Calculate: 15! (fifteen factorial)", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-005", "text": "What is 2^64?", "category": "large_numbers", "max_tokens": 256}
+{"id": "reasoning-006", "text": "A train leaves Chicago at 2:15 PM traveling at 80 mph. Another leaves Detroit (280 miles away) at 2:45 PM traveling at 95 mph toward Chicago. At what time do they meet?", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-007", "text": "Is 7919 a prime number? Show your reasoning.", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-008", "text": "If all bloops are razzles, and all razzles are lazzles, are all bloops definitely lazzles?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-009", "text": "Three people check into a hotel room that costs $30. They each pay $10. Later the manager realizes the room is only $25 and gives $5 to the bellboy to return. The bellboy keeps $2 and gives $1 back to each person. Now each person paid $9 (total $27), plus the bellboy has $2 = $29. Where is the missing dollar?", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-010", "text": "Convert the hexadecimal number 0xDEADBEEF to decimal.", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-011", "text": "What is the sum of all integers from 1 to 1000?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-012", "text": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-013", "text": "If you flip a fair coin 10 times and get heads every time, what is the probability the next flip is heads?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-014", "text": "How many times does the digit 7 appear in all numbers from 1 to 1000?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-015", "text": "A farmer has 17 sheep. All but 9 die. How many sheep are left?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-016", "text": "What is 0.1 + 0.2? Is it exactly 0.3? Explain.", "category": "precision", "max_tokens": 256}
+{"id": "reasoning-017", "text": "Solve step by step: 8 ÷ 2(2+2) = ?", "category": "arithmetic", "max_tokens": 512}
+{"id": "reasoning-018", "text": "I have 12 coins. One is counterfeit and lighter than the rest. Using a balance scale, what is the minimum number of weighings needed to find the counterfeit coin?", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-019", "text": "What is the derivative of x^x with respect to x?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-020", "text": "A snail climbs 3 feet up a well each day but slides back 2 feet each night. If the well is 30 feet deep, how many days does it take to escape?", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-021", "text": "What is the 50th term of the Fibonacci sequence?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-022", "text": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-023", "text": "Evaluate the integral of 1/(1+x^2) from 0 to infinity.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-024", "text": "There are 100 lockers in a row, all closed. 100 students walk by. Student 1 opens every locker. Student 2 toggles every 2nd locker. Student 3 toggles every 3rd, and so on. After all 100 students pass, which lockers are open?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-025", "text": "Express 0.999... (repeating) as a fraction. Is it equal to 1?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-026", "text": "What is 999999 * 999999?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-027", "text": "A car travels the first half of a distance at 40 mph and the second half at 60 mph. What is the average speed for the whole trip?", "category": "word_problem", "max_tokens": 256}
+{"id": "reasoning-028", "text": "In a room of 23 people, what is the probability that at least two share a birthday?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-029", "text": "What is the largest prime number less than 10000?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-030", "text": "You have two ropes. Each takes exactly 1 hour to burn, but they burn non-uniformly. How can you measure exactly 45 minutes?", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-031", "text": "Simplify: (x^2 - 9) / (x^2 - 6x + 9)", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-032", "text": "How many zeros are at the end of 100! (100 factorial)?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-033", "text": "Three friends split a dinner bill. The bill is $47.50 plus 20% tip, split evenly. How much does each person pay?", "category": "word_problem", "max_tokens": 256}
+{"id": "reasoning-034", "text": "What is the angle between the hour and minute hands of a clock at 3:15?", "category": "word_problem", "max_tokens": 256}
+{"id": "reasoning-035", "text": "Is the statement 'this sentence is false' true or false? Explain the paradox.", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-036", "text": "Convert 72 degrees Fahrenheit to Celsius, then to Kelvin.", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-037", "text": "A lily pad doubles in size every day. If it takes 48 days to cover a pond, how many days does it take to cover half the pond?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-038", "text": "Calculate the determinant of the matrix [[3,1,4],[1,5,9],[2,6,5]].", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-039", "text": "What is the probability of getting exactly 3 heads in 5 fair coin flips?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-040", "text": "If log_2(x) = 5, what is log_4(x)?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-041", "text": "You have a 3-gallon jug and a 5-gallon jug. How do you measure exactly 4 gallons?", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-042", "text": "What is the GCD of 1071 and 462? Show your work using the Euclidean algorithm.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-043", "text": "A store marks up items 40% over cost, then offers a 25% discount. What is the net percentage change from the original cost?", "category": "word_problem", "max_tokens": 256}
+{"id": "reasoning-044", "text": "How many distinct ways can you arrange the letters in MISSISSIPPI?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-045", "text": "Solve: |2x - 5| < 3. Express the solution as an interval.", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-046", "text": "If you pick 2 cards from a standard deck without replacement, what is the probability both are aces?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-047", "text": "A projectile is launched at 45 degrees with initial velocity 20 m/s. Ignoring air resistance, what is the maximum height? (g = 9.8 m/s²)", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-048", "text": "What is the remainder when 2^1000 is divided by 7?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-049", "text": "Three cards are placed face down: a king, a queen, and a jack. You pick one. The dealer reveals one of the remaining cards is a jack. Should you switch your choice?", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-050", "text": "Compute the cross product of vectors [1,2,3] and [4,5,6].", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-051", "text": "A box contains 5 red balls and 3 blue balls. You draw two without replacement. What is the probability that both are different colors?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-052", "text": "Solve for all real values of x: x^4 - 5x^2 + 4 = 0. Show your substitution and factoring.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-053", "text": "A rectangular garden is 3 times as long as it is wide. Its perimeter is 96 meters. What are its dimensions and area?", "category": "word_problem", "max_tokens": 256}
+{"id": "reasoning-054", "text": "If f(x) = 2x + 3 and g(x) = x^2 - 1, what is f(g(f(2)))?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-055", "text": "You roll three fair dice. What is the probability that all three show different numbers?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-056", "text": "A 10-meter ladder leans against a wall. The bottom is 6 meters from the wall. How high up the wall does the ladder reach? If the bottom slides outward at 0.5 m/s, how fast is the top sliding down when the bottom is 8 meters from the wall?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-057", "text": "How many integers between 1 and 1000 are divisible by 3 or 5 but not both?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-058", "text": "Alice is taller than Bob. Bob is taller than Carol. Dave is shorter than Carol. Eve is taller than Alice. Rank all five from tallest to shortest.", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-059", "text": "A tank is being filled by Pipe A at 10 gallons/min and drained by Pipe B at 6 gallons/min. The tank holds 500 gallons and starts at 200 gallons. Pipe A runs alone for the first 20 minutes, then both pipes run. When is the tank full?", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-060", "text": "What is the sum of the interior angles of a 13-sided polygon? What about the exterior angles?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-061", "text": "Three logicians walk into a bar. The bartender asks 'Does everyone want a drink?' The first logician says 'I don't know.' The second says 'I don't know.' The third says 'Yes.' Explain the reasoning behind each answer.", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-062", "text": "Estimate how many piano tuners are in Chicago. Show your Fermi estimation reasoning.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-063", "text": "Convert the binary number 11011011.10101 to decimal. Show each positional calculation.", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-064", "text": "A rope is wrapped once around the equator of the Earth (circumference ~40,075 km). If you add 1 meter to the rope and lift it uniformly, how high above the surface does it hover? Is the answer intuitive?", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-065", "text": "In a game, you can double your money with probability 0.6 or lose everything with probability 0.4. Starting with $100, what is the expected value after one round? After two rounds? Is this game worth playing repeatedly?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-066", "text": "What is the next number in the sequence: 1, 1, 2, 3, 5, 8, 13, 21, 34, __? Now what is the next number in: 2, 6, 12, 20, 30, 42, __? Explain the pattern for each.", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-067", "text": "A circle is inscribed in a square with side length 10. A square is inscribed in that circle. What is the side length and area of the inner square?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-068", "text": "You have 1000 bottles of wine. One is poisoned. You have 10 test subjects. Each subject can drink from any number of bottles simultaneously, and results come back in exactly one round (one day). How many bottles can you test, and how do you identify the poisoned one?", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-069", "text": "Solve the inequality: (x-1)(x+2)(x-3) > 0. Express the solution as a union of intervals.", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-070", "text": "A car depreciates by 15% each year. If it costs $30,000 new, what is it worth after 5 years? After how many years is it worth less than $10,000?", "category": "word_problem", "max_tokens": 256}
+{"id": "reasoning-071", "text": "Is it possible to cover an 8x8 chessboard with 2x1 dominoes if two diagonally opposite corners are removed? Prove or disprove.", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-072", "text": "What is the volume of a sphere with radius 7? What is the surface area? Express both in terms of π and as decimal approximations.", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-073", "text": "You have a bag with 10 coins: 9 fair coins and 1 double-headed coin. You pick a random coin and flip it 3 times, getting heads each time. What is the probability the coin you picked is the double-headed one? Use Bayes' theorem.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-074", "text": "Evaluate the limit: lim (x→0) of (sin(5x))/(3x). Show your reasoning.", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-075", "text": "A shop sells apples for $1.50 each, bananas for $0.75 each, and cherries for $3.00 per bag. I buy some of each and spend exactly $20.25. I buy twice as many bananas as apples. If I buy 3 bags of cherries, how many apples and bananas did I buy?", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-076", "text": "In binary, what is 10110110 AND 11001101? What is 10110110 OR 11001101? What is 10110110 XOR 11001101?", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-077", "text": "Five pirates find 100 gold coins. They have a strict seniority order and vote on proposals. The most senior proposes a split. If at least half accept, it's done. Otherwise, that pirate is thrown overboard and the next proposes. Each pirate is rational and wants to maximize their coins (and survive). What does the most senior pirate propose?", "category": "logic", "max_tokens": 1024}
+{"id": "reasoning-078", "text": "A cylindrical can has volume 1000 cm³. What radius and height minimize the surface area? Solve using calculus.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-079", "text": "What is the probability of getting a sum of exactly 15 when rolling four fair six-sided dice?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-080", "text": "A invests $5000 at 6% annual interest compounded quarterly. B invests $5000 at 5.9% compounded continuously. After 10 years, who has more money and by how much?", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-081", "text": "How many ways can 8 rooks be placed on an 8x8 chessboard such that no two attack each other?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-082", "text": "You're on a game show. Behind one of three doors is a car. You pick door 1. The host, who knows what's behind each door, opens door 3, revealing a goat. He offers you the chance to switch to door 2. What if there were 100 doors and the host opens 98 goat doors? Should you switch? Explain the generalized probability.", "category": "logic", "max_tokens": 512}
+{"id": "reasoning-083", "text": "Simplify: (2 + 3i)(4 - i) + (1 + 2i)^2. Express in the form a + bi.", "category": "arithmetic", "max_tokens": 256}
+{"id": "reasoning-084", "text": "An airplane flies 300 km/h in still air. With a headwind, a round trip of 600 km (300 km each way) takes 2.5 hours. What is the wind speed?", "category": "word_problem", "max_tokens": 512}
+{"id": "reasoning-085", "text": "You flip a coin until you get two consecutive heads. What is the expected number of flips? Set up and solve the recurrence.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-086", "text": "Prove that the sum of any two odd numbers is even. Then prove that the product of any two odd numbers is odd.", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-087", "text": "How many distinct paths are there from the top-left to the bottom-right of a 6x4 grid if you can only move right or down?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-088", "text": "A rubber ball bounces to 75% of its drop height each time. If dropped from 10 meters, what is the total distance traveled (up and down combined) before it comes to rest? Express as a geometric series and compute.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-089", "text": "What is the expected number of times you must roll a fair die before seeing all six faces at least once? This is the coupon collector problem.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-090", "text": "Two adjacent sides of a parallelogram are 12 cm and 8 cm. The angle between them is 60 degrees. Find the area and the length of both diagonals.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-091", "text": "A function f satisfies f(x+y) = f(x) * f(y) for all real x, y, and f(1) = 3. What is f(5)? What is f(-2)? What is the general form of f?", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-092", "text": "Estimate the number of golf balls that can fit inside a school bus. Walk through your dimensional reasoning.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-093", "text": "There are 30 people in a room. What is the probability that at least two share a birthday month? How does this compare to the birthday problem for exact dates?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-094", "text": "A clock loses 3 minutes every hour. It is set correctly at noon on Monday. What is the actual time when the clock shows 4:00 PM on Tuesday?", "category": "word_problem", "max_tokens": 256}
+{"id": "reasoning-095", "text": "What is the minimum number of weighings on a balance scale needed to find one heavier coin among 27 coins, where all others weigh the same? Generalize to n coins.", "category": "logic", "max_tokens": 256}
+{"id": "reasoning-096", "text": "Solve the recurrence a(n) = a(n-1) + 2a(n-2) with a(0) = 1, a(1) = 1. Find a closed-form using the characteristic equation.", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-097", "text": "A right triangle has legs of length a and b and hypotenuse c. A circle is inscribed in it. What is the radius of the inscribed circle in terms of a, b, and c?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-098", "text": "You have a string of 12 characters over the alphabet {A, B, C}. How many such strings have no two consecutive identical characters?", "category": "chain_of_thought", "max_tokens": 256}
+{"id": "reasoning-099", "text": "Water flows into a conical tank at 2 cubic meters per minute. The cone has height 10 m and top radius 5 m (vertex at bottom). How fast is the water level rising when the depth is 4 m?", "category": "chain_of_thought", "max_tokens": 512}
+{"id": "reasoning-100", "text": "Nine dots are arranged in a 3x3 grid. Connect all nine dots using four straight lines without lifting your pen. Describe the solution and explain why most people fail to find it.", "category": "logic", "max_tokens": 512}

@@ -29,6 +29,33 @@ def strip_thinking_tokens(text: str) -> str:
     return text
 
 
+# Server-specific stop reasons mapped onto the two values the analysis cares about.
+_STOP_REASONS = frozenset({"stop", "eos", "word", "end_turn", "stop_sequence"})
+_LENGTH_REASONS = frozenset({"length", "limit", "max_tokens"})
+
+
+def normalize_finish_reason(raw: Any) -> str | None:
+    """Map a backend's finish/stop reason to ``"stop"``, ``"length"``, or pass it through.
+
+    - ``"stop"``: the model ended its turn or hit a stop sequence
+      (OpenAI ``stop``, llama.cpp ``eos``/``word``, Anthropic-style ``end_turn``).
+    - ``"length"``: generation was cut off by the token budget
+      (OpenAI ``length``, llama.cpp ``limit``).
+    - Anything else (``tool_calls``, ``content_filter``, ``abort``, …) is returned
+      lower-cased so it stays visible in results. Missing/empty → ``None``.
+    """
+    if raw is None:
+        return None
+    value = str(raw).strip().lower()
+    if not value or value == "none":
+        return None
+    if value in _STOP_REASONS:
+        return "stop"
+    if value in _LENGTH_REASONS:
+        return "length"
+    return value
+
+
 def sanitize_filename(label: str) -> str:
     """Sanitize a label for safe use in filenames across platforms.
 
