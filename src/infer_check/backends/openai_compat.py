@@ -14,6 +14,7 @@ import httpx
 import numpy as np
 import numpy.typing as npt
 
+from infer_check.analysis.scoring import model_input
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt, normalize_finish_reason, strip_thinking_tokens
@@ -166,7 +167,8 @@ class OpenAICompatBackend(BackendAdapter):
         if self._disable_thinking and self._is_ollama:
             return await self._generate_ollama_native(prompt)
 
-        user_text = strip_thinking_tokens(prompt.text) if self._disable_thinking else prompt.text
+        prompt_text = model_input(prompt)
+        user_text = strip_thinking_tokens(prompt_text) if self._disable_thinking else prompt_text
         messages: list[dict[str, str]] = []
         if self._disable_thinking:
             # Empty system message overrides any server-side SYSTEM default
@@ -295,7 +297,7 @@ class OpenAICompatBackend(BackendAdapter):
         other variants whose Modelfile TEMPLATE hardcodes the thinking trigger.
         Logprobs are requested via the ``logprobs`` and ``top_logprobs`` fields.
         """
-        user_text = strip_thinking_tokens(prompt.text)
+        user_text = strip_thinking_tokens(model_input(prompt))
         payload: dict[str, Any] = {
             "model": self._model_id,
             "messages": [
@@ -407,7 +409,7 @@ class OpenAICompatBackend(BackendAdapter):
     async def _generate_completions(self, prompt: Prompt) -> InferenceResult:
         """Use the legacy ``/v1/completions`` endpoint for raw logprobs."""
         formatted = format_prompt(
-            prompt.text,
+            model_input(prompt),
             model_id=self._model_id,
             revision=self._revision,
             disable_thinking=self._disable_thinking,

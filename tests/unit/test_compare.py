@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -230,17 +231,17 @@ class TestCompareRunner:
             assert c.test.metadata["prompt_category"] is not None
 
     def test_severe_divergence_flip_rate(self, test_runner: TestRunner) -> None:
-        """When outputs differ severely, flip_rate reflects it."""
-        prompts = _make_prompts(4)
+        """Flip rate counts answers that went from right to wrong, not text differences."""
+        prompts = [Prompt(id=f"p{i}", text=f"Prompt {i}", answer_type="integer", expected=str(i)) for i in range(4)]
 
-        # Model A gives consistent answers
-        resp_a = {p.id: f"The answer is {i}" for i, p in enumerate(prompts)}
-        # Model B diverges severely on half
+        # Model A answers everything correctly
+        resp_a = {p.id: f"Some working.\nFinal answer: {i}" for i, p in enumerate(prompts)}
+        # Model B gets half wrong
         resp_b = {
-            prompts[0].id: "The answer is 0",  # identical
-            prompts[1].id: "The answer is 1",  # identical
-            prompts[2].id: "XXXXX",  # severe
-            prompts[3].id: "YYYYY",  # severe
+            prompts[0].id: "Some working.\nFinal answer: 0",  # identical
+            prompts[1].id: "Different working entirely.\nFinal answer: 1",  # reworded, still right
+            prompts[2].id: "Some working.\nFinal answer: 99",  # wrong
+            prompts[3].id: "Some working.\nFinal answer: -3",  # wrong
         }
 
         backend_a = self._make_mock_backend("a", resp_a)
@@ -255,8 +256,12 @@ class TestCompareRunner:
         )
 
         assert len(result.comparisons) == 4
-        # 2 out of 4 should be severe
         assert result.flip_rate == pytest.approx(0.5)
+        assert result.correctness is not None
+        assert result.correctness["regressions"] == 2
+        assert result.correctness["improvements"] == 0
+        assert result.correctness["a"]["accuracy"] == 1.0
+        assert result.correctness["b"]["accuracy"] == 0.5
         assert result.mean_text_similarity is not None
         assert result.mean_text_similarity < 1.0
 
@@ -363,3 +368,58 @@ class TestCompareRunner:
 
         checkpoint_files = list(cache_dir.glob("compare_*.json"))
         assert checkpoint_files, "Expected at least one compare_*.json checkpoint file to be written"
+
+
+def test_flip_rate_agrees_with_correctness_on_truncation(tmp_path: Path) -> None:
+    """A truncation where the other side answered correctly is a flip and a regression."""
+    from infer_check.backends.base import BackendAdapter
+
+    class _Backend(BackendAdapter):
+        def __init__(self, text: str, finish: str) -> None:
+            self._text, self._finish = text, finish
+
+        @property
+        def name(self) -> str:
+            return "stub"
+
+        @property
+        def model_id(self) -> str:
+            return "stub"
+
+        @property
+        def supports_concurrency(self) -> bool:
+            return False
+
+        @property
+        def supports_scoring(self) -> bool:
+            return False
+
+        async def score(self, prompt: Prompt, target_ids: list[int], *, top_k: int = 64, at_ids: Any = None) -> Any:
+            raise NotImplementedError
+
+        async def generate(self, prompt: Prompt) -> InferenceResult:
+            return InferenceResult(
+                prompt_id=prompt.id,
+                backend_name="stub",
+                model_id="stub",
+                tokens=[],
+                text=self._text,
+                latency_ms=1.0,
+                metadata={"finish_reason": self._finish},
+            )
+
+        async def health_check(self) -> bool:
+            return True
+
+        async def cleanup(self) -> None:
+            pass
+
+    prompts = [Prompt(id="p", text="1+1?", answer_type="integer", expected="2")]
+    result = asyncio.run(
+        TestRunner(cache_dir=tmp_path).compare(
+            _Backend("Final answer: 2", "stop"), _Backend("1+1 1+1 1+1 1+1", "length"), prompts
+        )
+    )
+    assert result.correctness is not None and result.correctness["regressions"] == 1
+    assert result.comparisons[0].metadata["flipped"] is True
+    assert result.flip_rate == 1.0

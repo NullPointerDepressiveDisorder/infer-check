@@ -32,6 +32,28 @@ def _warn(message: str) -> None:
     Console().print(f"[yellow]  ⚠ {message}[/yellow]")
 
 
+def flip_rate(comparisons: list[ComparisonResult]) -> float:
+    """Fraction of flip-eligible comparisons whose answer flipped.
+
+    Comparisons with ``metadata["flipped"] is None`` (no meaningful answer to
+    compare) are excluded from the denominator.
+    """
+    eligible = [c for c in comparisons if c.metadata.get("flipped") is not None]
+    return sum(1 for c in eligible if c.metadata["flipped"]) / len(eligible) if eligible else 0.0
+
+
+def correctness_summary(comparisons: list[ComparisonResult]) -> dict[str, Any] | None:
+    """Paired correctness table (baseline = A, test = B) over the graded comparisons."""
+    from infer_check.analysis.scoring import paired_correctness
+
+    pairs = [
+        (c.metadata["grade_a"], c.metadata["grade_b"])
+        for c in comparisons
+        if c.metadata.get("grade_a") is not None and c.metadata.get("grade_b") is not None
+    ]
+    return paired_correctness(pairs)
+
+
 def first_divergence(a: InferenceResult, b: InferenceResult) -> int | None:
     """Index of the first token where two generations differ, or None if identical.
 
@@ -64,28 +86,49 @@ class TestRunner:
     def _annotate_flip_metadata(
         self,
         comp: ComparisonResult,
-        text_a: str,
-        text_b: str,
-        category: str,
+        prompt: Prompt,
     ) -> None:
-        """Extract functional answers and check for flips, updating comparison metadata."""
-        from infer_check.analysis.answer_extract import (
-            answers_match,
-            extract_answer,
-        )
+        """Grade both sides and decide whether the answer flipped, updating comparison metadata.
 
-        ans_a = extract_answer(text_a, category)
-        ans_b = extract_answer(text_b, category)
-        flipped = not answers_match(ans_a, ans_b)
+        Graded prompts (with an answer key): each side gets a grade
+        (correct / wrong / unparsed / truncated); a flip is one side correct and
+        the other wrong. As in ``paired_correctness``, a truncation where the
+        other side finished counts as wrong; unparsed responses are never flips.
 
-        comp.metadata["flipped"] = flipped
+        Free prompts: falls back to category-based answer extraction. Prompts
+        whose category has no real extractor would only be compared by raw text
+        similarity, which says nothing about the answer, so they get
+        ``flipped = None`` and are excluded from the flip rate.
+        """
+        from infer_check.analysis.answer_extract import answers_match, extract_answer
+        from infer_check.analysis.scoring import final_answer, grade
+
+        text_a, text_b = comp.baseline.text, comp.test.text
+
+        if prompt.is_graded:
+            grade_a, grade_b = grade(comp.baseline, prompt), grade(comp.test, prompt)
+            comp.metadata["expected"] = prompt.expected
+            comp.metadata["answer_type"] = prompt.answer_type
+            comp.metadata["grade_a"] = grade_a
+            comp.metadata["grade_b"] = grade_b
+            comp.metadata["answer_a"] = final_answer(text_a)
+            comp.metadata["answer_b"] = final_answer(text_b)
+            comp.metadata["extraction_strategy"] = "answer_key"
+            # Same truncation rule as paired_correctness: running out of budget where
+            # the other side finished is a wrong answer.
+            eff_a = "wrong" if grade_a == "truncated" and grade_b != "truncated" else grade_a
+            eff_b = "wrong" if grade_b == "truncated" and grade_a != "truncated" else grade_b
+            gradable = {"correct", "wrong"}
+            comp.metadata["flipped"] = eff_a in gradable and eff_b in gradable and eff_a != eff_b
+            return
+
+        ans_a = extract_answer(text_a, prompt.category)
+        ans_b = extract_answer(text_b, prompt.category)
         comp.metadata["answer_a"] = ans_a.value
         comp.metadata["answer_b"] = ans_b.value
         comp.metadata["extraction_strategy"] = ans_a.strategy
-        comp.metadata["extraction_confidence"] = min(
-            ans_a.confidence,
-            ans_b.confidence,
-        )
+        comp.metadata["extraction_confidence"] = min(ans_a.confidence, ans_b.confidence)
+        comp.metadata["flipped"] = None if ans_a.strategy == "raw" else not answers_match(ans_a, ans_b)
 
     def _save_checkpoint(self, results: Any, path: Path) -> None:
         """Write intermediate results as JSON for resumability."""
@@ -297,6 +340,7 @@ class TestRunner:
                 # anything else means scoring itself is nondeterministic.
                 kl = await self._teacher_forced(baseline_backend, prompt, ref_res, refs.get(prompt.id))
                 comp = self._compare(ref_res, res2, kl=kl)
+                self._annotate_flip_metadata(comp, prompt)
                 comp.metadata["is_self_check"] = True
                 all_comparisons.append(comp)
                 if comp.is_failure:
@@ -333,6 +377,7 @@ class TestRunner:
                     if baseline:
                         kl = await self._teacher_forced(backend, prompt, baseline, refs.get(prompt.id))
                         comp = self._compare(baseline, res, kl=kl)
+                        self._annotate_flip_metadata(comp, prompt)
                         all_comparisons.append(comp)
                         if comp.is_failure:
                             failure_counts[quant] = failure_counts.get(quant, 0) + 1
@@ -364,6 +409,11 @@ class TestRunner:
             "mean_kl_divergence": pooled["mean_kl"],
             "kl_method": pooled["method"],
             "kl_by_quant": kl_by_quant,
+            # Paired correctness of each level against the baseline (None without answer keys).
+            "correctness_by_quant": {
+                quant: correctness_summary([c for c in all_comparisons if (c.test.quantization or "unknown") == quant])
+                for quant in quantization_levels
+            },
         }
 
         return SweepResult(
@@ -456,15 +506,15 @@ class TestRunner:
             if a and b:
                 kl = await self._teacher_forced(backend_b, prompt, a, refs.get(prompt.id))
                 comp = self._compare(a, b, kl=kl)
-                self._annotate_flip_metadata(comp, a.text, b.text, prompt.category)
+                self._annotate_flip_metadata(comp, prompt)
                 comparisons.append(comp)
 
         # ── Aggregate metrics ────────────────────────────────────────
         n = len(comparisons)
 
-        # Flip rate via answer extraction (not severity proxy).
-        flip_count = sum(1 for c in comparisons if c.metadata.get("flipped", False))
-        flip_rate = flip_count / n if n > 0 else 0.0
+        # Flip rate over flip-eligible prompts; correctness over prompts with answer keys.
+        overall_flip_rate = flip_rate(comparisons)
+        correctness = correctness_summary(comparisons)
 
         kl_summary = aggregate_kl(comparisons)
 
@@ -478,11 +528,11 @@ class TestRunner:
         per_category: dict[str, dict[str, Any]] = {}
         for cat, cat_comps in cat_groups.items():
             cat_n = len(cat_comps)
-            cat_flips = sum(1 for c in cat_comps if c.metadata.get("flipped", False))
             cat_kl = aggregate_kl(cat_comps)
             per_category[cat] = {
                 "count": cat_n,
-                "flip_rate": cat_flips / cat_n,
+                "flip_rate": flip_rate(cat_comps),
+                "correctness": correctness_summary(cat_comps),
                 "mean_similarity": sum(c.text_similarity for c in cat_comps) / cat_n,
                 "mean_kl_divergence": cat_kl["mean_kl"],
                 "mean_top1_agreement": cat_kl["mean_top1_agreement"],
@@ -508,7 +558,8 @@ class TestRunner:
             backend_a=backend_a.name,
             backend_b=backend_b.name,
             comparisons=comparisons,
-            flip_rate=flip_rate,
+            flip_rate=overall_flip_rate,
+            correctness=correctness,
             mean_kl_divergence=kl_summary["mean_kl"],
             kl_method=kl_summary["method"],
             mean_top1_agreement=kl_summary["mean_top1_agreement"],
@@ -571,7 +622,7 @@ class TestRunner:
                     if baseline:
                         kl = await self._teacher_forced(test_backend, prompt, baseline, refs.get(prompt.id))
                         comp = self._compare(baseline, test_res, kl=kl)
-                        self._annotate_flip_metadata(comp, baseline.text, test_res.text, prompt.category)
+                        self._annotate_flip_metadata(comp, prompt)
                         comparisons.append(comp)
                     progress.advance(task)
 

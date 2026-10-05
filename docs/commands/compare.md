@@ -78,6 +78,8 @@ The command displays three tables:
 | mean text similarity | Average text similarity (0-1) |
 | identical / minor / moderate / severe | Severity tier counts |
 
+**Correctness vs answer keys** -- printed when the suite has answer keys (e.g. `--prompts gsm8k`): a 2x2 table of both right / regressions / improvements / both wrong, each side's accuracy with a 95% interval, and an exact McNemar p-value. See [Interpreting results](../interpreting-results.md#correctness-answer-keys).
+
 **Per-category breakdown** -- flip rate and mean similarity by prompt category.
 
 **Flipped prompts detail** -- for each prompt where the answer flipped, shows the prompt text, category, extraction strategy, both answers, and similarity score.
@@ -90,6 +92,7 @@ Results are saved as a JSON file containing a `CompareResult` with:
 - `backend_a`, `backend_b` -- backend names
 - `comparisons` -- all per-prompt `ComparisonResult` objects
 - `flip_rate` -- fraction of prompts with answer flips
+- `correctness` -- paired correctness table against answer keys (`null` if no prompt has one)
 - `mean_kl_divergence` -- mean per-token KL divergence (`kl_method` says how it was computed)
 - `mean_top1_agreement` -- pooled top-1 agreement
 - `mean_text_similarity` -- average text similarity

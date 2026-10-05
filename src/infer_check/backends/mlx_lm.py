@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 import numpy.typing as npt
 
+from infer_check.analysis.scoring import model_input
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt
@@ -165,7 +166,7 @@ class MLXBackend(BackendAdapter):
     def _format(self, prompt: Prompt) -> str:
         """Apply the model's chat template (if any) to the prompt text."""
         return format_prompt(
-            prompt.text,
+            model_input(prompt),
             tokenizer=self._tokenizer,
             revision=self._revision,
             disable_thinking=self._disable_thinking,

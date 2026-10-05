@@ -9,6 +9,7 @@ import httpx
 import numpy as np
 import numpy.typing as npt
 
+from infer_check.analysis.scoring import model_input
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt, normalize_finish_reason
@@ -72,7 +73,7 @@ class LlamaCppBackend(BackendAdapter):
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Send a completion request and parse the response."""
         formatted = format_prompt(
-            prompt.text,
+            model_input(prompt),
             model_id=self._model_id,
             revision=self._revision,
             disable_thinking=self._disable_thinking,

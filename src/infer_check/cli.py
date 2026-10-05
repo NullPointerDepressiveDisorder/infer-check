@@ -273,7 +273,7 @@ def sweep(
     for quant_level in quant_levels:
         comps = groups.get(quant_level, [])
         if not comps:
-            table.add_row(quant_level, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A")
+            table.add_row(quant_level, *["N/A"] * 7)
             continue
 
         severities = {"identical": 0, "minor": 0, "moderate": 0, "severe": 0}
@@ -312,6 +312,71 @@ def sweep(
         "TF = teacher-forced (both models score the baseline's tokens), "
         "prefix = approximate, shared-context positions only.[/dim]"
     )
+    _print_correctness_by_group(result.summary.get("correctness_by_quant", {}), "quant_level")
+
+
+def _fmt_acc(side: dict[str, Any]) -> str:
+    return "N/A" if side.get("accuracy") is None else f"{side['accuracy']:.1%}"
+
+
+def _correctness_cells(table: dict[str, Any] | None) -> tuple[str, str]:
+    """(accuracy A → B, "regressions / improvements (p=…)") for a paired correctness table."""
+    if not table:
+        return "—", "—"
+    p = table["mcnemar_p"]
+    style = "red" if table["regressions"] > table["improvements"] and p < 0.05 else ""
+    flips = f"{table['regressions']} / {table['improvements']} (p={p:.3g})"
+    return f"{_fmt_acc(table['a'])} → {_fmt_acc(table['b'])}", f"[{style}]{flips}[/]" if style else flips
+
+
+def _print_correctness_by_group(tables: dict[str, dict[str, Any] | None], group_label: str) -> None:
+    """One row per group (quant level / backend): accuracy vs the baseline and paired flips."""
+    rows = {name: t for name, t in tables.items() if t}
+    if not rows:
+        return
+    t = Table(title="Correctness vs answer keys (baseline → this)", header_style="bold magenta")
+    t.add_column(group_label, style="cyan")
+    t.add_column("graded", justify="right")
+    t.add_column("accuracy", justify="right")
+    t.add_column("regr / impr (p)", justify="right")
+    for name, table in rows.items():
+        acc, flips = _correctness_cells(table)
+        t.add_row(name, str(table["n_graded"]), acc, flips)
+    console.print(t)
+
+
+def _print_correctness(table: dict[str, Any] | None, label_a: str, label_b: str) -> None:
+    """Paired correctness table against answer keys (skipped when the suite has none)."""
+    if not table:
+        console.print("[dim]No answer keys in this suite: correctness not measured.[/dim]")
+        return
+    a, b = table["a"], table["b"]
+
+    def acc(side: dict[str, Any]) -> str:
+        if side["accuracy"] is None:
+            return "N/A"
+        lo, hi = side["accuracy_ci95"]
+        return f"{side['accuracy']:.1%}  [{lo:.1%}, {hi:.1%}]  ({side['correct']}/{side['scored']})"
+
+    t = Table(title=f"Correctness vs answer keys ({table['n_graded']} graded prompts)", header_style="bold magenta")
+    t.add_column("", style="cyan")
+    t.add_column(f"{label_b} right", justify="right")
+    t.add_column(f"{label_b} wrong", justify="right")
+    t.add_row(f"{label_a} right", str(table["both_right"]), f"[red]{table['regressions']}[/red]")
+    t.add_row(f"{label_a} wrong", f"[green]{table['improvements']}[/green]", str(table["both_wrong"]))
+    console.print(t)
+    console.print(f"  accuracy {label_a}: {acc(a)}")
+    console.print(f"  accuracy {label_b}: {acc(b)}")
+    console.print(
+        f"  regressions {table['regressions']}, improvements {table['improvements']}, "
+        f"exact McNemar p = {table['mcnemar_p']:.3g}"
+    )
+    if a["unparsed"] or b["unparsed"] or a["truncated"] or b["truncated"] or table["both_truncated"]:
+        console.print(
+            f"  [dim]no parseable answer: {a['unparsed']} / {b['unparsed']}; "
+            f"hit token limit while the other finished (counted wrong): {a['truncated']} / {b['truncated']}; "
+            f"both hit the limit (excluded): {table['both_truncated']}[/dim]"
+        )
 
 
 def _kl_cells(comps: list[Any]) -> tuple[str, str]:
@@ -509,6 +574,7 @@ def compare(
     )
 
     console.print(table)
+    _print_correctness(compare_result.correctness, resolved_a.label, resolved_b.label)
 
     # ── Per-category breakdown ───────────────────────────────────────
     if compare_result.per_category_stats:
@@ -711,6 +777,9 @@ def diff(
 
     from collections import defaultdict
 
+    from infer_check.runner import correctness_summary
+    from infer_check.runner import flip_rate as compute_flip_rate
+
     groups: dict[str, list[Any]] = defaultdict(list)
     for comp in comparisons:
         groups[comp.test.backend_name].append(comp)
@@ -718,8 +787,7 @@ def diff(
     for backend_name, comps in groups.items():
         failures = sum(1 for c in comps if c.is_failure)
         failure_rate = failures / len(comps) if comps else 0.0
-        flips = sum(1 for c in comps if c.metadata.get("flipped", False))
-        flip_rate = flips / len(comps) if comps else 0.0
+        flip_rate = compute_flip_rate(comps)
         mean_sim = sum(c.text_similarity for c in comps) / len(comps) if comps else 0.0
         table.add_row(
             backend_name,
@@ -730,6 +798,7 @@ def diff(
         )
 
     console.print(table)
+    _print_correctness_by_group({name: correctness_summary(comps) for name, comps in groups.items()}, "test_backend")
 
 
 # ---------------------------------------------------------------------------

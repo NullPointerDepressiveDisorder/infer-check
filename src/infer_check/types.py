@@ -6,9 +6,10 @@ from typing import Any, Literal, Self
 
 import numpy as np
 import numpy.typing as npt
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
+    "AnswerType",
     "Prompt",
     "InferenceResult",
     "ComparisonResult",
@@ -48,12 +49,31 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+AnswerType = Literal["integer", "decimal", "boolean", "choice", "free"]
+
+
 class Prompt(BaseInferModel):
     id: str = Field(default_factory=_generate_uuid)
     text: str
     category: str = "general"
     max_tokens: int = 1024
+    # How to grade the response against ``expected``. "free" prompts have no
+    # answer key: they contribute KL/similarity but not correctness metrics.
+    answer_type: AnswerType = "free"
+    expected: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_answer_key(self) -> Self:
+        if self.answer_type != "free" and not self.expected:
+            raise ValueError(f"prompt '{self.id}': answer_type '{self.answer_type}' requires 'expected'")
+        if self.answer_type == "free" and self.expected is not None:
+            raise ValueError(f"prompt '{self.id}': 'expected' given but answer_type is 'free'")
+        return self
+
+    @property
+    def is_graded(self) -> bool:
+        return self.answer_type != "free"
 
 
 class InferenceResult(BaseInferModel):
@@ -147,7 +167,10 @@ class CompareResult(BaseInferModel):
     backend_a: str
     backend_b: str
     comparisons: list[ComparisonResult]
-    flip_rate: float  # fraction of prompts where the "answer" changed
+    flip_rate: float  # fraction of flip-eligible prompts where the answer changed
+    # Paired correctness against answer keys (see analysis.scoring.paired_correctness);
+    # None when no prompt in the suite has an answer key.
+    correctness: dict[str, Any] | None = None
     mean_kl_divergence: float | None = None
     kl_method: Literal["teacher_forced", "prefix"] | None = None
     mean_top1_agreement: float | None = None

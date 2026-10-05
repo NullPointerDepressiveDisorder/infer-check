@@ -59,3 +59,25 @@ def test_duplicate_explicit_ids_are_rejected(tmp_path: Path) -> None:
     suite.write_text('{"id": "x", "text": "a"}\n{"id": "x", "text": "b"}\n', encoding="utf-8")
     with pytest.raises(ValueError, match="Duplicate prompt id 'x'"):
         load_suite(suite)
+
+
+@pytest.mark.parametrize("suite", list_suites())
+def test_bundled_suites_load_and_answer_keys_validate(suite: str) -> None:
+    # Prompt's validator rejects keyed prompts without `expected` (and vice versa).
+    prompts = load_suite(get_suite_path(suite))
+    assert prompts
+
+
+def test_numerics_answer_keys_match_their_computation() -> None:
+    import subprocess
+    import sys
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "build_answer_keys.py"
+    proc = subprocess.run([sys.executable, str(script), "--check"], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_gsm8k_is_fully_keyed() -> None:
+    prompts = load_suite(get_suite_path("gsm8k"))
+    assert len(prompts) == 1319
+    assert all(p.is_graded and p.answer_type == "integer" for p in prompts)

@@ -63,14 +63,15 @@ This will:
 
 `infer-check` ships with curated prompt suites targeting known quantization failure modes:
 
-| Suite | Count | Purpose |
-|-------|-------|---------|
-| `reasoning` | 50 | Multi-step math and logic |
-| `code` | 49 | Python, JSON, SQL generation |
-| `adversarial-numerics` | 30 | IEEE 754 edge cases, overflow, precision |
-| `long-context` | 10 | Tables and transcripts with recall questions |
-| `quant-sensitive` | 20 | Multi-digit arithmetic, long CoT, precise syntax |
-| `determinism` | 50 | High-entropy continuations for determinism testing |
+| Suite | Count | Answer keys | Purpose |
+|-------|-------|-------------|---------|
+| `gsm8k` | 1319 | all | Grade-school math word problems (GSM8K test split, MIT); the main suite for correctness |
+| `reasoning` | 100 | — | Multi-step math and logic |
+| `code` | 100 | — | Python, JSON, SQL generation |
+| `adversarial-numerics` | 100 | 43 | IEEE 754 edge cases, overflow, precision |
+| `long-context` | 100 | — | Tables and transcripts with recall questions |
+| `quant-sensitive` | 100 | — | Multi-digit arithmetic, long CoT, precise syntax |
+| `determinism` | 100 | — | High-entropy continuations for determinism testing |
 
 All suites ship with the package -- no need to clone the repo. Use them by name:
 

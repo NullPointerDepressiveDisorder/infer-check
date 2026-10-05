@@ -15,13 +15,37 @@ Every per-prompt comparison is classified into one of four severity tiers based 
 
 Text similarity is computed using `difflib.SequenceMatcher`, which measures the ratio of matching characters between the two outputs.
 
+## Correctness (answer keys)
+
+Prompts can carry an answer key: an `answer_type` (`integer`, `decimal`, `boolean` or `choice`) and an `expected` value. For these prompts, infer-check grades each response against the key rather than comparing two outputs to each other. This is the most direct measure of whether a quantization or backend broke something.
+
+The prompt sent to the model gets a fixed instruction appended: work step by step, then end with `Final answer: <answer>`. The grader reads the last `Final answer:` line, or the last `\boxed{...}` if there isn't one. Numbers may be written with commas, as `1.5e9`, `1.5 × 10^9`, `10^9`, or as a fraction `a/b`. Integers must match exactly; decimals within a relative tolerance of 10⁻⁶.
+
+Each response gets one of four grades:
+
+| Grade | Meaning |
+|-------|---------|
+| `correct` | Parsed answer matches the key |
+| `wrong` | Parsed answer doesn't match |
+| `unparsed` | No `Final answer:` line or `\boxed{}`; counts as wrong for accuracy |
+| `truncated` | No answer because generation hit `max_tokens`; see the truncation rule below |
+
+**Truncation rule.** When one configuration hits the token limit on a prompt that the other one finished, the truncation counts as wrong. This both lowers its accuracy and enters the paired table: a regression if the other side was right, both wrong otherwise. Running out of budget where the other model didn't is that model's own failure, typically a repetition loop. When both configurations hit the limit, the prompt is excluded (`both_truncated`), because the budget itself is the likely cause. In that case, raise `max_tokens`.
+
+Comparisons are reported as a paired table: both right, **regressions** (A right, B wrong), **improvements** (A wrong, B right), and both wrong. The headline is "B regressed on *r* prompts and improved on *i*", with an exact McNemar test on those discordant pairs. A small p-value means the difference is unlikely to be chance. Each side's accuracy comes with a 95% Wilson confidence interval.
+
+!!! tip "You need many prompts"
+    With 100 prompts and a handful of regressions, McNemar can't detect anything. Use the `gsm8k` suite (1,319 problems) for quantization comparisons, and pick prompts the baseline mostly gets right. Two different wrong answers say nothing about whether quantization broke the model.
+
+Bundled answer keys: all of `gsm8k`, and 43 of the 100 `adversarial-numerics` prompts (only those with a single unambiguous answer, computed by `scripts/build_answer_keys.py`).
+
 ## Flip rate
 
-The flip rate is the fraction of prompts where the **functional answer** changed between the two models or backends. Unlike text similarity (which measures surface-level text overlap), flip rate uses answer extraction to determine whether the actual answer is different.
+The flip rate is the fraction of **flip-eligible** prompts where the answer changed between the two models or backends.
 
-### Answer extraction strategies
+For prompts with an answer key, a flip means one side is correct and the other wrong. `unparsed` and `truncated` responses are never flips.
 
-`infer-check` extracts the functional answer from each response based on the prompt's category:
+For prompts without a key, infer-check falls back to extracting an answer based on the prompt's category:
 
 | Category | Strategy | What it extracts |
 |----------|----------|-----------------|
@@ -29,7 +53,9 @@ The flip rate is the fraction of prompts where the **functional answer** changed
 | Boolean prompts | `boolean` | Yes/no with negation detection |
 | Code prompts | `code` | Fenced code blocks with whitespace normalization |
 | JSON prompts | `json` | Parsed and canonicalized JSON |
-| Everything else | `raw` | Full lowercased text |
+| Everything else | — | Not flip-eligible (`flipped` is `null`) |
+
+Prompts in categories without an extractor used to be compared by raw text similarity, which made any rewording count as a "flip". They are now excluded from the flip rate.
 
 A "flip" occurs when the extracted answers from two models don't match. For example:
 
@@ -46,7 +72,7 @@ These metrics capture different things:
 
 A response can have "severe" text divergence but no flip (e.g., different reasoning paths reaching the same answer), or "minor" text divergence with a flip (e.g., nearly identical text except the final number is wrong).
 
-Flip rate is generally the more actionable metric for assessing correctness.
+For prompts with answer keys, prefer the correctness table over the flip rate: it says which side was right.
 
 ## KL divergence
 

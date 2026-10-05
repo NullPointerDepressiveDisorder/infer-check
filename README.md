@@ -80,7 +80,7 @@ Results from running `infer-check` on Llama-3.1-8B-Instruct on Apple Silicon usi
 └─────────────────────┴───────────┴───────┴──────────┴────────┴─────────────────┘
 ```
 
-A "severe" divergence means the quantized output is functionally wrong — not just worded differently, but giving incorrect answers to questions the bf16 baseline handles correctly.
+> **Note:** these numbers predate the MLX generation fixes and the correctness scoring added since, and will be regenerated. "Severe" means low *text similarity* to the baseline, not a wrong answer. Whether answers are actually wrong is measured against answer keys; see [Interpreting results](docs/interpreting-results.md#correctness-answer-keys).
 
 ### Cross-backend diff
 
@@ -103,22 +103,26 @@ See the [backends documentation](https://nullpointerdepressivedisorder.github.io
 
 ## Prompt suites
 
-Six curated suites ship with the package — no need to clone the repo:
+Seven curated suites ship with the package — no need to clone the repo:
 
-| Suite | Count | Purpose |
-| --- | --- | --- |
-| `reasoning` | 50 | Multi-step math and logic |
-| `code` | 49 | Python, JSON, SQL generation |
-| `adversarial-numerics` | 30 | IEEE 754 edge cases, overflow, precision |
-| `long-context` | 10 | Tables and transcripts with recall questions |
-| `quant-sensitive` | 20 | Multi-digit arithmetic, long CoT, precise syntax |
-| `determinism` | 50 | High-entropy continuations for determinism testing |
+| Suite | Count | Answer keys | Purpose |
+| --- | --- | --- | --- |
+| `gsm8k` | 1319 | all | Grade-school math word problems (GSM8K test split, MIT); the main suite for correctness |
+| `reasoning` | 100 | — | Multi-step math and logic |
+| `code` | 100 | — | Python, JSON, SQL generation |
+| `adversarial-numerics` | 100 | 43 | IEEE 754 edge cases, overflow, precision |
+| `long-context` | 100 | — | Tables and transcripts with recall questions |
+| `quant-sensitive` | 100 | — | Multi-digit arithmetic, long CoT, precise syntax |
+| `determinism` | 100 | — | High-entropy continuations for determinism testing |
 
 Custom suites are JSONL files with one object per line:
 
 ```json
 {"id": "custom-001", "text": "Your prompt here", "category": "math", "max_tokens": 512}
+{"id": "custom-002", "text": "What is 17 * 23?", "category": "math", "max_tokens": 512, "answer_type": "integer", "expected": "391"}
 ```
+
+Add `answer_type` (`integer`, `decimal`, `boolean`, or `choice`) and `expected` to grade responses for correctness. infer-check then reports a paired table of regressions vs. improvements with an exact McNemar test.
 
 ## Roadmap
 

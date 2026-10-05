@@ -200,9 +200,10 @@ async def test_diff_flip_detection(runner: TestRunner) -> None:
     assert comp_p1.metadata["answer_b"] == "5"
     assert "extraction_confidence" in comp_p1.metadata
 
-    # Check p2 (no flip)
+    # Check p2: free-form "general" prompt with no answer extractor. Raw text
+    # similarity says nothing about the answer, so it's not flip-eligible.
     comp_p2 = next(c for c in comparisons if c.baseline.prompt_id == "p2")
-    assert comp_p2.metadata["flipped"] is False
+    assert comp_p2.metadata["flipped"] is None
     assert comp_p2.metadata["answer_a"].lower() == "paris"
     assert comp_p2.metadata["answer_b"].lower() == "paris"
     assert "extraction_confidence" in comp_p2.metadata
@@ -210,12 +211,12 @@ async def test_diff_flip_detection(runner: TestRunner) -> None:
 
 @pytest.mark.asyncio
 async def test_diff_multiple_test_backends(runner: TestRunner) -> None:
-    p1 = Prompt(id="p1", text="Test", category="general")
+    p1 = Prompt(id="p1", text="Pick A or B", category="general", answer_type="choice", expected="A")
     prompts = [p1]
 
-    baseline = StubBackend("baseline", {"p1": "A"})
-    test1 = StubBackend("test1", {"p1": "B"})
-    test2 = StubBackend("test2", {"p1": "A"})
+    baseline = StubBackend("baseline", {"p1": "Final answer: A"})
+    test1 = StubBackend("test1", {"p1": "Final answer: B"})
+    test2 = StubBackend("test2", {"p1": "Final answer: A"})
 
     comparisons = await runner.diff(
         baseline_backend=baseline,
