@@ -73,7 +73,8 @@ The command displays three tables:
 |--------|-------------|
 | prompts | Total number of prompts tested |
 | flip rate | Fraction of prompts where the extracted answer changed |
-| mean KL divergence | Average KL(baseline \|\| test) across prompts |
+| mean KL divergence | Mean per-token KL(baseline \|\| test), pooled over all token positions; the label says whether it is teacher-forced or prefix (approximate) |
+| top-1 agreement | Fraction of positions where both models' most likely next token matches |
 | mean text similarity | Average text similarity (0-1) |
 | identical / minor / moderate / severe | Severity tier counts |
 
@@ -89,7 +90,8 @@ Results are saved as a JSON file containing a `CompareResult` with:
 - `backend_a`, `backend_b` -- backend names
 - `comparisons` -- all per-prompt `ComparisonResult` objects
 - `flip_rate` -- fraction of prompts with answer flips
-- `mean_kl_divergence` -- average KL divergence
+- `mean_kl_divergence` -- mean per-token KL divergence (`kl_method` says how it was computed)
+- `mean_top1_agreement` -- pooled top-1 agreement
 - `mean_text_similarity` -- average text similarity
 - `per_category_stats` -- per-category breakdown with flip rate, mean similarity, count
 - `timestamp` -- when the comparison completed

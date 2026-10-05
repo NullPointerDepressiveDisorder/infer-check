@@ -11,9 +11,11 @@ import time
 from typing import Any
 
 import httpx
+import numpy as np
+import numpy.typing as npt
 
 from infer_check.backends.base import BackendAdapter
-from infer_check.types import InferenceResult, Prompt
+from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt, normalize_finish_reason, strip_thinking_tokens
 
 __all__ = ["OpenAICompatBackend"]
@@ -90,6 +92,23 @@ class OpenAICompatBackend(BackendAdapter):
     def supports_concurrency(self) -> bool:
         # HTTP requests genuinely overlap and the server schedules/batches them.
         return True
+
+    @property
+    def supports_scoring(self) -> bool:
+        # Possible later via vLLM's `prompt_logprobs`; not implemented yet.
+        return False
+
+    async def score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int = 64,
+        at_ids: npt.NDArray[np.int64] | None = None,
+    ) -> TokenScores:
+        raise NotImplementedError(
+            f"{self.name} backend does not support teacher-forced scoring; comparisons fall back to prefix KL."
+        )
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """POST to the completions or chat/completions endpoint."""

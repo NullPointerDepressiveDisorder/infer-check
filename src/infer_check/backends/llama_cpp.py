@@ -6,9 +6,11 @@ import math
 import time
 
 import httpx
+import numpy as np
+import numpy.typing as npt
 
 from infer_check.backends.base import BackendAdapter
-from infer_check.types import InferenceResult, Prompt
+from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt, normalize_finish_reason
 
 __all__ = ["LlamaCppBackend"]
@@ -50,6 +52,22 @@ class LlamaCppBackend(BackendAdapter):
         # HTTP requests genuinely overlap; whether llama-server batches them
         # depends on its --parallel/-np slot setting.
         return True
+
+    @property
+    def supports_scoring(self) -> bool:
+        return False
+
+    async def score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int = 64,
+        at_ids: npt.NDArray[np.int64] | None = None,
+    ) -> TokenScores:
+        raise NotImplementedError(
+            "llama-cpp backend does not support teacher-forced scoring; comparisons fall back to prefix KL."
+        )
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Send a completion request and parse the response."""

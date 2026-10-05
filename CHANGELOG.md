@@ -1,5 +1,13 @@
 # Unreleased
 
+- **Fixed (KL divergence):** the old metric compared distributions at every position, including after the two generations had diverged, when the models were predicting continuations of different text. Combined with a 1e-10 floor for missing tokens, this produced meaningless values (~19 nats/token for 4-bit vs. bf16). KL is now either:
+  - **teacher-forced** (mlx-lm): both models score the baseline's exact tokens, so every position compares the same context. The baseline's top 64 tokens are compared individually and all remaining probability is merged into one bucket, which makes the value a slight underestimate of the full-vocabulary KL.
+  - **prefix** (fallback for other backends): stored top-K distributions, restricted to positions where both generations still share a context.
+- New comparison fields: `kl_method`, `kl_max`, `kl_p99`, `kl_positions`, `kl_per_token`, `top1_agreement`. `CompareResult` gains `kl_method` and `mean_top1_agreement`. Sweep summaries report KL per quantization level (`kl_by_quant`) instead of one number pooled across levels.
+- The CLI sweep and compare tables show mean KL (labelled by method) and top-1 agreement.
+- Backends gain `supports_scoring` and `score()` (implemented for mlx-lm).
+- Removed `analysis.divergence.kl_divergence`, which computed `p·log(p/q)` over chosen-token log-probs only and was not a KL divergence.
+
 - **Fixed (MLX backend):** generation now uses `mlx_lm.stream_generate`. Previously the backend looped over `generate_step`, which (a) never stopped at the end-of-message token, so outputs ran on into invented extra turns, (b) was capped at 256 tokens regardless of `max_tokens`, and (c) decoded one token at a time, mangling multi-byte characters. Results produced by earlier versions of the MLX backend overstate divergence and should be regenerated.
 - **Fixed (MLX backend):** chat-templated prompts no longer get a second BOS token.
 - **Changed (MLX backend):** removed the silent fallback to `mlx_lm.generate`; generation errors now propagate.

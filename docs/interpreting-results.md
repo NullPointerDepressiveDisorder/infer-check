@@ -50,18 +50,33 @@ Flip rate is generally the more actionable metric for assessing correctness.
 
 ## KL divergence
 
-KL divergence (Kullback-Leibler divergence) measures how different the token probability distributions are between two backends. It's computed as KL(baseline || test) -- how much information is lost when using the test distribution to approximate the baseline.
+KL divergence measures how different two models' next-token probability distributions are, reported as the mean per-token KL(baseline ‖ test) in nats. Unlike text similarity, it catches drift even when both models happen to generate the same text.
 
-| KL divergence | Interpretation |
+Every comparison records which of two methods produced its KL (`kl_method`). The two are not comparable and are never averaged together.
+
+**Teacher-forced** (`teacher_forced`) is used when both backends can score, which today means both are mlx-lm. Both models are run over the baseline's exact output tokens, so at every position they predict the next token from identical context. The baseline's top 64 tokens are compared individually and all remaining probability is merged into one bucket. This makes the value a slight underestimate of the full-vocabulary KL, by a negligible amount in practice.
+
+**Prefix** (`prefix`) is an approximate fallback for backends that can't score, such as HTTP servers. It uses the stored top-K distributions, but only at positions where both generations still share the same context. That means everything up to and including the first token where the outputs differ. Past that point the models are continuing different text, and comparing them is meaningless. Expect few positions and a rougher number.
+
+| Mean KL (nats/token) | Interpretation |
 |---------------|----------------|
-| 0.0 | Identical distributions |
-| < 0.01 | Very similar -- negligible difference |
-| 0.01 - 0.1 | Small differences in token probabilities |
-| 0.1 - 1.0 | Moderate divergence -- different confidence levels |
-| > 1.0 | Large divergence -- fundamentally different predictions |
+| 0.0 | Identical distributions (expected for a baseline self-check) |
+| < 0.01 | Negligible: typical of 8-bit vs. bf16 |
+| 0.01 - 0.1 | Noticeable: typical of 4-bit, more so on small models |
+| 0.1 - 1.0 | Large: the model's predictions are materially different |
+| > 1.0 | Very large: likely broken |
+
+As a reference point, Qwen2.5-0.5B-Instruct on 30 reasoning prompts measured 0.0006 for 8-bit and 0.092 for 4-bit against bf16. Small models are more sensitive to quantization than large ones.
+
+Related fields:
+
+- `top1_agreement`: the fraction of positions where both models' most likely token is the same.
+- `kl_max` and `kl_p99`: localized spikes that the mean hides.
+- `kl_per_token`: the per-position values.
+- `kl_positions`: how many positions the KL was computed over.
 
 !!! note
-    KL divergence is only available when both backends provide logprobs or token probability distributions. Not all backends support this. When unavailable, the field is `null` in the output.
+    Teacher-forced KL feeds the baseline's token IDs to the test model, so both must share a tokenizer, for example different quantizations of the same model. When neither method is possible, all KL fields are `null`.
 
 ## Text similarity
 

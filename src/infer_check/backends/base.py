@@ -1,8 +1,10 @@
 from typing import Any, Literal, Protocol
 
+import numpy as np
+import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict, Field
 
-from infer_check.types import InferenceResult, Prompt
+from infer_check.types import InferenceResult, Prompt, TokenScores
 
 __all__ = ["BackendAdapter", "BackendConfig", "get_backend", "get_backend_for_model"]
 
@@ -36,8 +38,39 @@ class BackendAdapter(Protocol):
         """
         ...
 
+    @property
+    def supports_scoring(self) -> bool:
+        """True if ``score()`` is implemented (teacher-forced log-probs)."""
+        ...
+
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Generate a single inference result for a prompt."""
+        ...
+
+    async def score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int = 64,
+        at_ids: npt.NDArray[np.int64] | None = None,
+    ) -> TokenScores:
+        """Teacher-forced scoring: log-probs for a *given* continuation of ``prompt``.
+
+        Runs the model over the prompt (templated and encoded exactly as in
+        ``generate``) followed by ``target_ids``, without sampling. Row ``i`` of
+        the result is the distribution predicting ``target_ids[i]``.
+
+        Args:
+            prompt: The prompt the continuation belongs to.
+            target_ids: The token sequence to score (typically another model's output).
+            top_k: How many most-likely tokens to return per position (0 for none).
+            at_ids: Optional ``[len(target_ids), M]`` token IDs; their log-probs are
+                returned in ``TokenScores.at_logprobs``.
+
+        Raises:
+            NotImplementedError: if ``supports_scoring`` is False.
+        """
         ...
 
     async def health_check(self) -> bool:

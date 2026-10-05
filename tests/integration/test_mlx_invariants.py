@@ -11,11 +11,13 @@ Override the model with INFER_CHECK_TEST_MODEL=<mlx-community repo>.
 import asyncio
 import os
 
+import numpy as np
 import pytest
 
 pytest.importorskip("mlx.core")
 pytest.importorskip("mlx_lm")
 
+from infer_check.analysis.divergence import teacher_forced_kl  # noqa: E402
 from infer_check.backends.mlx_lm import MLXBackend  # noqa: E402
 from infer_check.types import InferenceResult, Prompt  # noqa: E402
 
@@ -76,3 +78,37 @@ def test_greedy_generation_is_repeatable(backend: MLXBackend) -> None:
     a = gen(backend, "What is 12 * 13? Answer briefly.", 64)
     b = gen(backend, "What is 12 * 13? Answer briefly.", 64)
     assert a.token_ids == b.token_ids and a.text == b.text
+
+
+# ── Teacher-forced scoring ──────────────────────────────────────────
+
+
+def test_scoring_reproduces_greedy_generation(backend: MLXBackend) -> None:
+    """Scoring the model's own greedy output must agree with how it was generated.
+
+    Not bit-exact: one chunked forward pass and step-by-step decoding use
+    different kernels, so near-ties can flip. That's why the runner only ever
+    compares scored-vs-scored. But agreement must be near-total and log-probs
+    close; an off-by-one alignment bug would wreck both.
+    """
+    prompt = Prompt(id="t", text="Explain in two sentences why the sky is blue.", max_tokens=96)
+    r = asyncio.run(backend.generate(prompt))
+    assert r.token_ids and r.logprobs
+    ids = np.array(r.token_ids)
+    s = asyncio.run(backend.score(prompt, r.token_ids, top_k=8, at_ids=ids[:, None]))
+
+    assert len(s) == len(ids)
+    assert np.mean(s.argmax == ids) >= 0.95
+    assert s.at_logprobs is not None
+    assert np.max(np.abs(s.at_logprobs[:, 0] - np.array(r.logprobs))) < 0.15
+
+
+def test_rescoring_with_same_model_gives_zero_kl(backend: MLXBackend) -> None:
+    prompt = Prompt(id="t", text="List three primary colors.", max_tokens=48)
+    r = asyncio.run(backend.generate(prompt))
+    assert r.token_ids
+    ref = asyncio.run(backend.score(prompt, r.token_ids, top_k=64))
+    again = asyncio.run(backend.score(prompt, r.token_ids, top_k=0, at_ids=ref.top_ids))
+    stats = teacher_forced_kl(ref, again)
+    assert stats is not None
+    assert stats.mean == 0.0 and stats.top1_agreement == 1.0

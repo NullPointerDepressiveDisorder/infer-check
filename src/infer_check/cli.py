@@ -267,11 +267,13 @@ def sweep(
     table.add_column("moderate", justify="right")
     table.add_column("severe", justify="right", style="red")
     table.add_column("mean_similarity", justify="right")
+    table.add_column("mean KL", justify="right")
+    table.add_column("top-1 agree", justify="right")
 
     for quant_level in quant_levels:
         comps = groups.get(quant_level, [])
         if not comps:
-            table.add_row(quant_level, "N/A", "N/A", "N/A", "N/A", "N/A")
+            table.add_row(quant_level, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A")
             continue
 
         severities = {"identical": 0, "minor": 0, "moderate": 0, "severe": 0}
@@ -301,9 +303,26 @@ def sweep(
             f"{severities['moderate']}/{n}",
             f"{severities['severe']}/{n}",
             f"{mean_sim:.4f}",
+            *_kl_cells(comps),
         )
 
     console.print(table)
+    console.print(
+        "[dim]KL = mean per-token KL(baseline ‖ test) in nats; "
+        "TF = teacher-forced (both models score the baseline's tokens), "
+        "prefix = approximate, shared-context positions only.[/dim]"
+    )
+
+
+def _kl_cells(comps: list[Any]) -> tuple[str, str]:
+    """Format (mean KL with method tag, top-1 agreement) for a group of comparisons."""
+    from infer_check.analysis.divergence import aggregate_kl
+
+    agg = aggregate_kl(comps)
+    if agg["mean_kl"] is None:
+        return "N/A", "N/A"
+    tag = "TF" if agg["method"] == "teacher_forced" else "prefix"
+    return f"{agg['mean_kl']:.4f} ({tag})", f"{agg['mean_top1_agreement']:.1%}"
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +494,10 @@ def compare(
         f"[{'red' if compare_result.flip_rate > 0.1 else 'green'}]{compare_result.flip_rate:.1%}[/]",
     )
     if compare_result.mean_kl_divergence is not None:
-        table.add_row("mean KL divergence", f"{compare_result.mean_kl_divergence:.6f}")
+        method = "teacher-forced" if compare_result.kl_method == "teacher_forced" else "prefix, approximate"
+        table.add_row(f"mean KL divergence ({method})", f"{compare_result.mean_kl_divergence:.6f}")
+    if compare_result.mean_top1_agreement is not None:
+        table.add_row("top-1 agreement", f"{compare_result.mean_top1_agreement:.2%}")
     if compare_result.mean_text_similarity is not None:
         table.add_row("mean text similarity", f"{compare_result.mean_text_similarity:.4f}")
     else:

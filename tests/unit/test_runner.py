@@ -1,8 +1,10 @@
+from typing import Any
+
 import pytest
 
 from infer_check.backends.base import BackendAdapter
 from infer_check.runner import TestRunner
-from infer_check.types import InferenceResult, Prompt
+from infer_check.types import InferenceResult, Prompt, TokenScores
 
 
 @pytest.fixture
@@ -135,6 +137,20 @@ class StubBackend(BackendAdapter):
     @property
     def supports_concurrency(self) -> bool:
         return True
+
+    @property
+    def supports_scoring(self) -> bool:
+        return False
+
+    async def score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int = 64,
+        at_ids: Any = None,
+    ) -> TokenScores:
+        raise NotImplementedError
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         text = self._responses.get(prompt.id, "Default response")

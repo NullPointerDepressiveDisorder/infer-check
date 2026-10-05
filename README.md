@@ -124,7 +124,7 @@ Custom suites are JSONL files with one object per line:
 
 - [ ] GGUF backend (direct llama.cpp integration without HTTP)
 - [ ] CUDA vLLM backend for GPU-based differential testing
-- [ ] Logprobs-based divergence scoring where backends support it
+- [x] Logprobs-based divergence scoring where backends support it (teacher-forced KL on mlx-lm; approximate prefix KL elsewhere)
 - [ ] Automated regression CI mode (`infer-check ci` with pass/fail exit codes)
 - [ ] Expanded prompt suites for tool use and multi-turn conversations
 

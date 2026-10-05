@@ -7,14 +7,21 @@ import gc
 import time
 from typing import TYPE_CHECKING, Any, cast
 
+import numpy as np
+import numpy.typing as npt
+
 from infer_check.backends.base import BackendAdapter
-from infer_check.types import InferenceResult, Prompt
+from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt
 
 if TYPE_CHECKING:
     import mlx.core as mx
 
 __all__ = ["MLXBackend"]
+
+# Tokens per forward pass when scoring. Bounds peak memory: each chunk
+# materialises [chunk, vocab] float32 logits (~260 MB for a 128k vocab).
+_SCORE_CHUNK = 512
 
 
 class MLXBackend(BackendAdapter):
@@ -55,6 +62,25 @@ class MLXBackend(BackendAdapter):
         # In-process and synchronous: calls run one at a time and block the
         # event loop, so concurrent callers get no real overlap.
         return False
+
+    @property
+    def supports_scoring(self) -> bool:
+        return True
+
+    async def score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int = 64,
+        at_ids: npt.NDArray[np.int64] | None = None,
+    ) -> TokenScores:
+        """Teacher-forced log-probs for ``target_ids`` as a continuation of ``prompt``.
+
+        See ``BackendAdapter.score``. Like ``generate``, this runs synchronously.
+        """
+        self._ensure_loaded()
+        return self._score(prompt, target_ids, top_k=top_k, at_ids=at_ids)
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Run inference and return an ``InferenceResult``.
@@ -240,4 +266,82 @@ class MLXBackend(BackendAdapter):
             latency_ms=elapsed_s * 1000,
             tokens_per_second=len(token_ids) / elapsed_s if elapsed_s > 0 else None,
             metadata={"finish_reason": finish_reason, "prompt_tokens": len(prompt_ids)},
+        )
+
+    def _score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int,
+        at_ids: npt.NDArray[np.int64] | None,
+        chunk_size: int = _SCORE_CHUNK,
+    ) -> TokenScores:
+        """Teacher-forced forward pass over ``prompt + target_ids``.
+
+        The prompt is encoded exactly as in ``_generate``. Everything but the
+        last prompt token is prefilled into a KV cache (their logits aren't
+        needed); then ``[last_prompt_token, *target_ids[:-1]]`` is fed in chunks,
+        so logits row ``i`` is the distribution that predicts ``target_ids[i]``.
+        Only small per-position summaries leave the device — the full
+        ``[T, vocab]`` matrix is never materialised at once.
+        """
+        import mlx.core as mx
+        from mlx_lm.models.cache import make_prompt_cache
+
+        n = len(target_ids)
+        if at_ids is not None and (at_ids.ndim != 2 or at_ids.shape[0] != n):
+            raise ValueError(f"at_ids must have shape [{n}, M], got {at_ids.shape}")
+
+        prompt_ids = self._encode(self._format(prompt))
+        if not prompt_ids:
+            raise ValueError("prompt encodes to zero tokens")
+
+        top_ids: list[npt.NDArray[np.int64]] = []
+        top_lps: list[npt.NDArray[np.float32]] = []
+        argmaxes: list[npt.NDArray[np.int64]] = []
+        at_lps: list[npt.NDArray[np.float32]] = []
+
+        if n > 0:
+            cache = make_prompt_cache(self._model)
+            prefix = prompt_ids[:-1]
+            for s in range(0, len(prefix), chunk_size):
+                self._model(mx.array(prefix[s : s + chunk_size])[None], cache=cache)
+                mx.eval([c.state for c in cache])
+
+            feed = [prompt_ids[-1], *target_ids[:-1]]
+            for s in range(0, n, chunk_size):
+                logits = self._model(mx.array(feed[s : s + chunk_size])[None], cache=cache)[0]
+                logits = logits.astype(mx.float32)
+                lp = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+
+                outputs: list[mx.array] = [mx.argmax(lp, axis=-1)]
+                k = min(top_k, int(lp.shape[-1]))
+                if k > 0:
+                    idx = mx.argpartition(-lp, kth=k - 1, axis=-1)[:, :k]
+                    vals = mx.take_along_axis(lp, idx, axis=-1)
+                    order = mx.argsort(-vals, axis=-1)
+                    outputs += [mx.take_along_axis(idx, order, axis=-1), mx.take_along_axis(vals, order, axis=-1)]
+                if at_ids is not None:
+                    want = mx.array(at_ids[s : s + chunk_size].astype(np.int32))
+                    outputs.append(mx.take_along_axis(lp, want, axis=-1))
+                mx.eval(outputs)
+
+                argmaxes.append(np.array(outputs[0], dtype=np.int64))
+                if k > 0:
+                    top_ids.append(np.array(outputs[1], dtype=np.int64))
+                    top_lps.append(np.array(outputs[2], dtype=np.float32))
+                if at_ids is not None:
+                    at_lps.append(np.array(outputs[-1], dtype=np.float32))
+
+        k_out = top_ids[0].shape[1] if top_ids else 0
+        return TokenScores(
+            top_ids=np.concatenate(top_ids) if top_ids else np.zeros((n, k_out), dtype=np.int64),
+            top_logprobs=np.concatenate(top_lps) if top_lps else np.zeros((n, k_out), dtype=np.float32),
+            argmax=np.concatenate(argmaxes) if argmaxes else np.zeros((0,), dtype=np.int64),
+            at_logprobs=(
+                np.concatenate(at_lps)
+                if at_lps
+                else (np.zeros((0, at_ids.shape[1]), dtype=np.float32) if at_ids is not None else None)
+            ),
         )

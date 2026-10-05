@@ -1,8 +1,11 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 
+import numpy as np
+import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
@@ -13,6 +16,7 @@ __all__ = [
     "StressResult",
     "DeterminismResult",
     "CompareResult",
+    "TokenScores",
 ]
 
 
@@ -84,7 +88,21 @@ class InferenceResult(BaseInferModel):
 class ComparisonResult(BaseInferModel):
     baseline: InferenceResult
     test: InferenceResult
+    # Mean per-token KL(baseline || test), in nats. How it was computed is in
+    # ``kl_method``; values from different methods must not be averaged together.
     kl_divergence: float | None = None
+    # "teacher_forced": both models scored the baseline's exact token sequence, so
+    #   every position compares distributions over the same context.
+    # "prefix": approximate fallback for backends that can't score; uses only the
+    #   positions up to and including the first divergent token, where both
+    #   generations still share a context.
+    kl_method: Literal["teacher_forced", "prefix"] | None = None
+    kl_max: float | None = None
+    kl_p99: float | None = None
+    kl_positions: int | None = None
+    kl_per_token: list[float] | None = None
+    # Fraction of positions where both models' most likely next token is the same.
+    top1_agreement: float | None = None
     token_divergence_index: int | None = None
     text_similarity: float
     is_failure: bool
@@ -131,7 +149,28 @@ class CompareResult(BaseInferModel):
     comparisons: list[ComparisonResult]
     flip_rate: float  # fraction of prompts where the "answer" changed
     mean_kl_divergence: float | None = None
+    kl_method: Literal["teacher_forced", "prefix"] | None = None
+    mean_top1_agreement: float | None = None
     mean_text_similarity: float | None = None
     per_category_stats: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TokenScores:
+    """Teacher-forced next-token log-probs for a fixed target token sequence.
+
+    Row ``i`` describes the distribution that predicts ``target_ids[i]`` given
+    the prompt and ``target_ids[:i]``. All log-probs are normalised over the
+    model's full vocabulary. In-memory only (holds numpy arrays; not serialised).
+    """
+
+    top_ids: npt.NDArray[np.int64]  # [T, K] token IDs, by descending log-prob
+    top_logprobs: npt.NDArray[np.float32]  # [T, K]
+    argmax: npt.NDArray[np.int64]  # [T] most likely token at each position
+    # [T, M] log-probs at caller-requested token IDs (``at_ids`` passed to score()).
+    at_logprobs: npt.NDArray[np.float32] | None = None
+
+    def __len__(self) -> int:
+        return int(self.argmax.shape[0])

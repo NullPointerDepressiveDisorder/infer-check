@@ -67,4 +67,4 @@ Results are saved as a JSON file containing a `SweepResult` with:
 - `quantization_levels` -- list of quantization labels
 - `comparisons` -- all per-prompt `ComparisonResult` objects
 - `timestamp` -- when the sweep completed
-- `summary` -- aggregate statistics (mean KL, failure counts)
+- `summary` -- aggregate statistics: failure counts, `kl_by_quant` (mean KL, method and top-1 agreement per quantization level), and a pooled `mean_kl_divergence` over non-baseline levels. The baseline self-check's teacher-forced KL should be exactly 0.
