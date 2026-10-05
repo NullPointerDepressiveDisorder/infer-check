@@ -1,5 +1,12 @@
 # Unreleased
 
+- **Changed: smaller result files.** Per-token top-K distributions are now dropped from saved results (and checkpoints) once KL has been computed. They were ~90% of file size, about 400 KB per prompt; a 12-prompt GSM8K compare went from 4.9 MB to 0.6 MB. Pass the global `--keep-distributions` flag to keep them.
+- **Changed: HTML report leads with correctness.**
+  - The executive summary shows graded comparisons, regressions and improvements. Its verdict names any statistically significant accuracy loss and no longer calls low text similarity "correctness issues".
+  - Compare cards show accuracy with 95% intervals, the paired 2x2 table, McNemar p, and truncation/unparsed notes.
+  - Sweeps get a per-level table (accuracy vs baseline, regressions/improvements, KL with method, top-1 agreement).
+  - KL is labelled teacher-forced or prefix everywhere, and the cross-backend table shows each prompt's grades.
+
 - **Added: correctness scoring against answer keys.** Prompts can carry `answer_type` (`integer` / `decimal` / `boolean` / `choice`) and `expected`. Graded prompts are sent with a fixed instruction to work step by step and end with `Final answer: <answer>`. Responses are graded `correct` / `wrong` / `unparsed` / `truncated`. Hitting the token limit on a prompt the other configuration finished counts as wrong; prompts where both hit the limit are excluded (`both_truncated`). `compare`, `diff` and `sweep` report a paired table (both right / regressions / improvements / both wrong) with an exact McNemar test and Wilson 95% intervals on accuracy (`CompareResult.correctness`, sweep `summary["correctness_by_quant"]`).
 - **Added: `gsm8k` suite.** The 1,319-problem GSM8K test split, all answer-keyed, imported by `scripts/import_gsm8k.py` (MIT, Cobbe et al. 2021). 43 of the 100 `adversarial-numerics` prompts now have answer keys computed by `scripts/build_answer_keys.py`; only prompts with a single unambiguous answer are keyed.
 - **Changed: flip rate.** For graded prompts, a flip means one side correct and the other wrong. Prompts whose category has no answer extractor were previously "flipped" whenever the text differed at all (raw similarity < 0.85). They are now excluded (`flipped = null`), and the flip rate is computed over eligible prompts only.

@@ -106,12 +106,20 @@ def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_
     type=click.IntRange(min=1, clamp=True),
     help="Limit the number of prompts to use from a suite; if omitted, all prompts are used.",
 )
+@click.option(
+    "--keep-distributions",
+    is_flag=True,
+    default=False,
+    help="Keep per-token top-K distributions in saved results (sweep/compare/diff). "
+    "They're only needed to compute KL during the run and make result files ~20x larger.",
+)
 @click.pass_context
-def main(ctx: click.Context, max_tokens: int, num_prompts: int | None) -> None:
+def main(ctx: click.Context, max_tokens: int, num_prompts: int | None, keep_distributions: bool) -> None:
     """infer-check: correctness and reliability testing for LLM inference engines."""
     ctx.ensure_object(dict)
     ctx.obj["max_tokens"] = max_tokens
     ctx.obj["num_prompts"] = num_prompts
+    ctx.obj["keep_distributions"] = keep_distributions
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +229,7 @@ def sweep(
             chat=chat,
         )
 
-    runner = TestRunner()
+    runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
     result = asyncio.run(
         runner.sweep(
             backend_map=backend_map,
@@ -514,7 +522,7 @@ def compare(
     backend_b = get_backend(config_b)
 
     # ── Run comparison ───────────────────────────────────────────────
-    runner = TestRunner()
+    runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
     compare_result = asyncio.run(
         runner.compare(
             backend_a=backend_a,
@@ -745,7 +753,7 @@ def diff(
     baseline_backend = backend_instances[0]
     test_backends = backend_instances[1:]
 
-    runner = TestRunner()
+    runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
     comparisons = asyncio.run(
         runner.diff(
             baseline_backend=baseline_backend,

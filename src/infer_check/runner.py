@@ -21,6 +21,9 @@ from infer_check.types import (
 )
 from infer_check.utils import sanitize_filename
 
+_RESULT_DISTRIBUTIONS = {"distributions", "distribution_metadata"}
+_DISTRIBUTION_FIELDS: dict[str, Any] = {"baseline": _RESULT_DISTRIBUTIONS, "test": _RESULT_DISTRIBUTIONS}
+
 # Baseline tokens kept per position for teacher-forced KL. The remaining mass is
 # merged into one bin, so KL is a (very tight) lower bound.
 REFERENCE_TOP_K = 64
@@ -79,9 +82,28 @@ def first_divergence(a: InferenceResult, b: InferenceResult) -> int | None:
 class TestRunner:
     __test__ = False
 
-    def __init__(self, cache_dir: str | Path = ".infer_check_cache"):
+    def __init__(self, cache_dir: str | Path = ".infer_check_cache", keep_distributions: bool = False):
+        """
+        Args:
+            cache_dir: Where intermediate checkpoints are written.
+            keep_distributions: Keep each result's per-token top-K distributions in
+                the returned and saved results. They are only inputs to the KL
+                computation, which happens during the run, and they dominate file
+                size (~400 KB per prompt), so by default they are dropped once
+                every comparison needing them has been computed.
+        """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.keep_distributions = keep_distributions
+
+    def _drop_distributions(self, comparisons: list[ComparisonResult]) -> None:
+        """Release stored top-K distributions once KL has been computed (unless keeping them)."""
+        if self.keep_distributions:
+            return
+        for comp in comparisons:
+            for res in (comp.baseline, comp.test):
+                res.distributions = None
+                res.distribution_metadata = None
 
     def _annotate_flip_metadata(
         self,
@@ -133,10 +155,18 @@ class TestRunner:
     def _save_checkpoint(self, results: Any, path: Path) -> None:
         """Write intermediate results as JSON for resumability."""
         path.parent.mkdir(parents=True, exist_ok=True)
+        # A sweep checkpoint can be written while the shared baseline results still
+        # hold distributions (they're dropped at the end), so exclude them here too.
+        exclude = None if self.keep_distributions else _DISTRIBUTION_FIELDS
         if hasattr(results, "model_dump_json"):
             path.write_text(results.model_dump_json(indent=2), encoding="utf-8")
         elif isinstance(results, list):
-            dumped = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
+            dumped = [
+                r.model_dump(mode="json", exclude=exclude if isinstance(r, ComparisonResult) else None)
+                if hasattr(r, "model_dump")
+                else r
+                for r in results
+            ]
             path.write_text(json.dumps(dumped, indent=2), encoding="utf-8")
         else:
             path.write_text(json.dumps(results, indent=2), encoding="utf-8")
@@ -416,6 +446,8 @@ class TestRunner:
             },
         }
 
+        self._drop_distributions(all_comparisons)
+
         return SweepResult(
             model_id=model_id,
             backend_name=next(iter(backend_map.values())).name,
@@ -538,6 +570,8 @@ class TestRunner:
                 "mean_top1_agreement": cat_kl["mean_top1_agreement"],
             }
 
+        self._drop_distributions(comparisons)
+
         # ── Cleanup ──────────────────────────────────────────────────
         await backend_a.cleanup()
         await backend_b.cleanup()
@@ -626,6 +660,7 @@ class TestRunner:
                         comparisons.append(comp)
                     progress.advance(task)
 
+        self._drop_distributions(comparisons)
         return comparisons
 
     async def stress(

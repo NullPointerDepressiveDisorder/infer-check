@@ -184,3 +184,50 @@ async def test_diff_skips_reference_scoring_when_no_test_backend_can_score(runne
 async def test_diff_uses_teacher_forced_when_test_backend_can_score(runner: TestRunner) -> None:
     comps = await runner.diff(AnalyticBackend("base", 1.0), [AnalyticBackend("mlx", 2.0)], PROMPTS)
     assert {c.kl_method for c in comps} == {"teacher_forced"}
+
+
+# ── distribution retention ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_distributions_dropped_after_kl_by_default(tmp_path: Path) -> None:
+    import json
+
+    runner = TestRunner(cache_dir=tmp_path)
+    # B can't score, so KL needs A's and B's stored distributions (prefix KL)...
+    res = await runner.compare(AnalyticBackend("a", 1.0), AnalyticBackend("b", 2.0, scoring=False), PROMPTS)
+    # ...which were used, then released.
+    assert res.kl_method == "prefix" and res.mean_kl_divergence is not None
+    for c in res.comparisons:
+        assert c.baseline.distributions is None and c.test.distributions is None
+        assert c.baseline.distribution_metadata is None and c.test.distribution_metadata is None
+        assert c.baseline.token_ids and c.kl_per_token  # everything else is kept
+    # Checkpoints written during the run don't carry them either.
+    for f in tmp_path.glob("compare_*.json"):
+        assert '"distributions": null' in f.read_text() or "distributions" not in json.loads(f.read_text())[0]
+
+
+@pytest.mark.asyncio
+async def test_keep_distributions_retains_them(tmp_path: Path) -> None:
+    runner = TestRunner(cache_dir=tmp_path, keep_distributions=True)
+    res = await runner.compare(AnalyticBackend("a", 1.0), AnalyticBackend("b", 2.0), PROMPTS)
+    assert all(c.baseline.distributions and c.test.distributions for c in res.comparisons)
+
+
+@pytest.mark.asyncio
+async def test_sweep_checkpoints_exclude_distributions(tmp_path: Path) -> None:
+    import json
+
+    backends: dict[str, BackendAdapter] = {
+        "bf16": AnalyticBackend("bf16", 1.0),
+        "4bit": AnalyticBackend("4bit", 2.0, scoring=False),
+    }
+    res = await TestRunner(cache_dir=tmp_path).sweep(backends, PROMPTS, ["bf16", "4bit"], model_id="m")
+    checkpoints = list(tmp_path.glob("sweep_*.json"))
+    assert checkpoints
+    for f in checkpoints:
+        for comp in json.loads(f.read_text()):
+            assert "distributions" not in comp["baseline"] and "distributions" not in comp["test"]
+    assert all(c.baseline.distributions is None for c in res.comparisons)
+    # KL was still computed from them before they were dropped.
+    assert res.summary["kl_by_quant"]["4bit"]["mean_kl"] > 0

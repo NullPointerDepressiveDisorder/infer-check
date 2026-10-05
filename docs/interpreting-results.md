@@ -104,6 +104,9 @@ Related fields:
 !!! note
     Teacher-forced KL feeds the baseline's token IDs to the test model, so both must share a tokenizer, for example different quantizations of the same model. When neither method is possible, all KL fields are `null`.
 
+!!! note "Stored distributions"
+    The per-token top-K distributions used to compute KL are dropped from saved results once KL is computed, because they make files about 20× larger. Run with `infer-check --keep-distributions <command> ...` to keep them for your own analysis.
+
 ## Text similarity
 
 A 0-1 score from `difflib.SequenceMatcher` measuring character-level overlap. Used to classify severity tiers.
