@@ -1,4 +1,4 @@
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast, get_args
 
 import numpy as np
 import numpy.typing as npt
@@ -82,12 +82,15 @@ class BackendAdapter(Protocol):
         ...
 
 
+BackendType = Literal["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"]
+
+
 class BackendConfig(BaseModel):
     """Configuration for an inference backend."""
 
     model_config = ConfigDict(extra="allow")
 
-    backend_type: Literal["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"]
+    backend_type: BackendType
     model_id: str
     quantization: str | None = None
     hf_revision: str | None = None
@@ -165,8 +168,12 @@ def get_backend_for_model(
 
     # Always normalize the model string first to ensure consistent model_id/base_url
     resolved = resolve_model(model_str, base_url=base_url)
+    chosen = backend_type or resolved.backend
+    valid: tuple[str, ...] = get_args(BackendType)
+    if chosen not in valid:
+        raise ValueError(f"Unknown backend '{chosen}'. Choose one of: {', '.join(valid)}.")
     config = BackendConfig(
-        backend_type=backend_type or resolved.backend,  # type: ignore
+        backend_type=cast(BackendType, chosen),
         model_id=resolved.model_id,
         base_url=base_url or resolved.base_url,
         quantization=quantization or resolved.label,

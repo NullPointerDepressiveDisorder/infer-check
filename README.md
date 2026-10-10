@@ -126,15 +126,20 @@ Add `answer_type` (`integer`, `decimal`, `boolean`, or `choice`) and `expected` 
 
 ## Roadmap
 
-- [ ] GGUF backend (direct llama.cpp integration without HTTP)
-- [ ] CUDA vLLM backend for GPU-based differential testing
 - [x] Logprobs-based divergence scoring where backends support it (teacher-forced KL on mlx-lm; approximate prefix KL elsewhere)
+- [x] Correctness against answer keys, with paired regressions/improvements and an exact McNemar test (GSM8K bundled)
+- [x] Stress test that varies batch composition and reports which outputs changed
+- [x] Positive controls: quantization and injected-noise dose-response (`scripts/positive_controls.py`)
+- [ ] Teacher-forced scoring over HTTP (vLLM `prompt_logprobs`), so server comparisons get exact KL
+- [ ] CUDA vLLM/SGLang backend for GPU-based differential testing
 - [ ] Automated regression CI mode (`infer-check ci` with pass/fail exit codes)
+- [ ] Provider-audit mode: the same model across hosted providers
 - [ ] Expanded prompt suites for tool use and multi-turn conversations
+- [ ] GGUF backend (direct llama.cpp integration without HTTP)
 
 ## Requirements
 
-- Python >= 3.11
+- Python >= 3.12
 - macOS with Apple Silicon (for mlx-lm backend) or Linux
 - At least one backend installed
 

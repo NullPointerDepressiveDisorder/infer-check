@@ -45,6 +45,38 @@ def flip_rate(comparisons: list[ComparisonResult]) -> float:
     return sum(1 for c in eligible if c.metadata["flipped"]) / len(eligible) if eligible else 0.0
 
 
+def find_degradation_cliff(
+    levels: list[str],
+    baseline: str,
+    correctness_by_level: dict[str, dict[str, Any] | None],
+    alpha: float = 0.05,
+) -> dict[str, Any] | None:
+    """First level, in the order given, with a statistically significant accuracy loss.
+
+    "Significant" means more regressions than improvements against the baseline
+    with exact McNemar p < ``alpha``. Levels are walked in the order the user
+    listed them (typically decreasing precision), never sorted by name.
+    Without answer keys there is no accuracy to lose, so this returns None.
+
+    Returns:
+        ``{"level", "regressions", "improvements", "mcnemar_p"}`` or None.
+    """
+    for level in levels:
+        if level == baseline:
+            continue
+        table = correctness_by_level.get(level)
+        if not table:
+            continue
+        if table["regressions"] > table["improvements"] and table["mcnemar_p"] < alpha:
+            return {
+                "level": level,
+                "regressions": table["regressions"],
+                "improvements": table["improvements"],
+                "mcnemar_p": table["mcnemar_p"],
+            }
+    return None
+
+
 def correctness_summary(comparisons: list[ComparisonResult]) -> dict[str, Any] | None:
     """Paired correctness table (baseline = A, test = B) over the graded comparisons."""
     from infer_check.analysis.scoring import paired_correctness
@@ -118,9 +150,10 @@ class TestRunner:
         other side finished counts as wrong; unparsed responses are never flips.
 
         Free prompts: falls back to category-based answer extraction. Prompts
-        whose category has no real extractor would only be compared by raw text
-        similarity, which says nothing about the answer, so they get
-        ``flipped = None`` and are excluded from the flip rate.
+        whose category has no real extractor, or where no answer could be
+        extracted from one side, would only be compared by raw text similarity,
+        which says nothing about the answer. They get ``flipped = None`` and are
+        excluded from the flip rate.
         """
         from infer_check.analysis.answer_extract import answers_match, extract_answer
         from infer_check.analysis.scoring import final_answer, grade
@@ -150,7 +183,12 @@ class TestRunner:
         comp.metadata["answer_b"] = ans_b.value
         comp.metadata["extraction_strategy"] = ans_a.strategy
         comp.metadata["extraction_confidence"] = min(ans_a.confidence, ans_b.confidence)
-        comp.metadata["flipped"] = None if ans_a.strategy == "raw" else not answers_match(ans_a, ans_b)
+        if ans_a.strategy == "raw" or not ans_a.value or not ans_b.value:
+            # No extractor for this category, or no answer found on one side:
+            # there's nothing to compare, so this prompt isn't flip-eligible.
+            comp.metadata["flipped"] = None
+        else:
+            comp.metadata["flipped"] = not answers_match(ans_a, ans_b)
 
     def _save_checkpoint(self, results: Any, path: Path) -> None:
         """Write intermediate results as JSON for resumability."""
@@ -445,6 +483,9 @@ class TestRunner:
                 for quant in quantization_levels
             },
         }
+        summary["degradation_cliff"] = find_degradation_cliff(
+            quantization_levels, baseline_quant, summary["correctness_by_quant"]
+        )
 
         self._drop_distributions(all_comparisons)
 

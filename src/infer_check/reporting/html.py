@@ -434,9 +434,10 @@ _HTML_TEMPLATE = """\
     {% if degradation_cliff %}
     <div class="cliff-callout">
       <span class="icon">⚠️</span>
-      <span><strong>Degradation cliff detected</strong> at quantization level
-        <code>{{ degradation_cliff }}</code> — failure rate jumps more than 2× vs.
-        the previous level.</span>
+      <span><strong>Degradation cliff</strong> at <code>{{ degradation_cliff.level }}</code>: the first
+        level (in the order tested) with a statistically significant accuracy loss vs. the baseline —
+        {{ degradation_cliff.regressions }} regressions vs {{ degradation_cliff.improvements }} improvements,
+        exact McNemar p = {{ '%.2g' % degradation_cliff.mcnemar_p }}.</span>
     </div>
     {% endif %}
   </section>
@@ -619,10 +620,11 @@ _HTML_TEMPLATE = """\
           <tr>
             <th>Model ID</th>
             <th>Backend</th>
-            <th>Concurrency</th>
-            <th>Requests</th>
+            <th>In flight</th>
+            <th>Compared</th>
             <th>Errors</th>
-            <th>Consistency</th>
+            <th>Identical to solo</th>
+            <th>Diverged</th>
           </tr>
         </thead>
         <tbody>
@@ -630,17 +632,31 @@ _HTML_TEMPLATE = """\
           <tr>
             <td style="font-family:monospace;font-size:0.78rem;">{{ row.model_id }}</td>
             <td>{{ row.backend_name }}</td>
-            <td>{{ row.concurrency_level }}</td>
-            <td>{{ row.num_results }}</td>
+            <td>{{ row.concurrency_level }}{% if row.is_reference %} <small style="color:var(--text-dim);">(reference)</small>{% endif %}</td>
+            <td>{{ row.compared }}</td>
             <td>
-              <span class="chip {{ 'chip-fail' if row.error_count > 0 else 'chip-ok' }}">
+              <span class="chip {{ 'chip-fail' if row.error_count > 0 else 'chip-ok' }}" title="{{ row.error_messages }}">
                 {{ row.error_count }}
               </span>
             </td>
             <td>
-              <span class="chip {{ 'chip-ok' if row.consistency_raw >= 0.9 else 'chip-fail' }}">
+              {% if row.is_reference %}—{% else %}
+              <span class="chip {{ 'chip-ok' if row.consistency_raw == 1.0 else 'chip-fail' }}">
                 {{ row.output_consistency }}%
               </span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.divergences %}
+              <details>
+                <summary>{{ row.divergences | length }} prompt(s)</summary>
+                <ul style="font-size:0.75rem; margin:0.4rem 0 0 1rem;">
+                  {% for d in row.divergences %}
+                  <li><code>{{ d.prompt_id }}</code>: first differing token {{ d.first_divergence }}; sent with {{ d.co_scheduled | join(", ") }}</li>
+                  {% endfor %}
+                </ul>
+              </details>
+              {% else %}—{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -912,7 +928,7 @@ def _build_sweep_context(
     cliff = None
     for sweep in sweeps:
         c = sweep.summary.get("degradation_cliff") if sweep.summary else None
-        if c:
+        if isinstance(c, dict):  # older result files stored a bare string from a different rule
             cliff = c
             break
 
@@ -1121,6 +1137,10 @@ def _build_stress_context(stress_results: list[StressResult]) -> list[dict[str, 
                 "output_consistency": f"{s.output_consistency * 100:.1f}",
                 "consistency_raw": s.output_consistency,
                 "num_results": len(s.results),
+                "compared": s.compared or len(s.results),
+                "is_reference": s.concurrency_level == 1,
+                "divergences": s.divergences,
+                "error_messages": "; ".join(s.error_messages),
             }
         )
     rows.sort(key=lambda r: (r["backend_name"], r["concurrency_level"]))

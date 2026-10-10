@@ -25,6 +25,7 @@ PREFIXES = {
     "adversarial-numerics": "numerics",
     "code": "code",
     "determinism": "determinism",
+    "gsm8k": "gsm8k",
     "long-context": "longctx",
     "quant-sensitive": "quant",
     "reasoning": "reasoning",

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 
 import click
+from click.core import ParameterSource
 from rich.console import Console
 from rich.table import Table
 
@@ -79,15 +80,24 @@ def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_
     # Update defaults from subcommand if provided
     if max_tokens is not None:
         ctx.obj["max_tokens"] = max_tokens
+        ctx.obj["max_tokens_explicit"] = True
     if num_prompts is not None:
         ctx.obj["num_prompts"] = num_prompts
 
     prompt_list = load_suite(_resolve_prompts(prompts), num_prompts=ctx.obj["num_prompts"])
 
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
+    applied = 0
     for p in prompt_list:
         if "max_tokens" not in p.model_fields_set:
             p.max_tokens = ctx.obj["max_tokens"]
+            applied += 1
+
+    if ctx.obj.get("max_tokens_explicit") and applied < len(prompt_list):
+        console.print(
+            f"[yellow]--max-tokens {ctx.obj['max_tokens']} applied to {applied} of {len(prompt_list)} prompts; "
+            "the rest set their own max_tokens, which takes precedence.[/yellow]"
+        )
 
     return prompt_list
 
@@ -98,7 +108,8 @@ def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_
     "--max-tokens",
     default=1024,
     show_default=True,
-    help="Default max tokens for generation (applies to all prompts unless they specify their own).",
+    help="Max tokens for prompts that don't set their own. Prompt-level max_tokens always wins, "
+    "and every bundled suite sets it, so this only affects custom suites.",
 )
 @click.option(
     "--num-prompts",
@@ -118,6 +129,7 @@ def main(ctx: click.Context, max_tokens: int, num_prompts: int | None, keep_dist
     """infer-check: correctness and reliability testing for LLM inference engines."""
     ctx.ensure_object(dict)
     ctx.obj["max_tokens"] = max_tokens
+    ctx.obj["max_tokens_explicit"] = ctx.get_parameter_source("max_tokens") is not ParameterSource.DEFAULT
     ctx.obj["num_prompts"] = num_prompts
     ctx.obj["keep_distributions"] = keep_distributions
 
@@ -321,6 +333,13 @@ def sweep(
         "prefix = approximate, shared-context positions only.[/dim]"
     )
     _print_correctness_by_group(result.summary.get("correctness_by_quant", {}), "quant_level")
+    cliff = result.summary.get("degradation_cliff")
+    if isinstance(cliff, dict):
+        console.print(
+            f"[bold red]Degradation cliff at {cliff['level']}[/bold red]: first level with a significant accuracy "
+            f"loss vs. the baseline ({cliff['regressions']} regressions vs {cliff['improvements']} improvements, "
+            f"exact McNemar p = {cliff['mcnemar_p']:.2g})."
+        )
 
 
 def _fmt_acc(side: dict[str, Any]) -> str:

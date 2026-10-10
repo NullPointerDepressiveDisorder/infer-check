@@ -1,5 +1,16 @@
 # Unreleased
 
+- **Fixed: degradation cliff.**
+  - It was computed by an unused function, walked quantization levels alphabetically ("3bit" < "4bit" < "8bit"), and was never written to the sweep summary, so the report never showed it.
+  - It is now the first level, in the order you list them, with a statistically significant accuracy loss vs. the baseline (more regressions than improvements, exact McNemar p < 0.05). The sweep table and HTML report show it.
+- **Changed: flip eligibility for prompts without answer keys.** When no answer can be extracted from one side, the prompt is no longer compared by raw text similarity; it's excluded from the flip rate.
+- **Changed: `--max-tokens`.** Prompt-level `max_tokens` still takes precedence. The help text now says so, and a notice appears when the flag didn't apply to some or all prompts (every bundled suite sets its own).
+- **Changed: HTML stress section** shows compared/diverged counts, the diverged prompts with their first differing token and co-scheduled prompts, and error messages.
+- **Changed: `vllm-mlx` backend defaults to `chat=True`**, matching the CLI and `get_backend_for_model`.
+- Unknown backend types now raise a clear `ValueError` instead of failing pydantic validation.
+- **Removed: unused helpers** `token_level_divergence`, `sequence_similarity`, `find_divergence_onset`, `compute_sweep_statistics` and `_find_degradation_cliff` from `analysis.divergence`. Use `runner.first_divergence` for divergence onset.
+- Cleared all bandit findings: narrowed exception handling in the JSON exporter, and marked false positives.
+
 - **Changed: `stress` now tests batch composition, and can fail.**
   - Each prompt first runs alone as the reference. At each concurrency level it is then sent together with N−1 randomly drawn other prompts (`--seed`, `--trials`), and its output is compared token-for-token with the solo run.
   - Results list every diverged prompt (first differing token, co-scheduled prompts) and distinct error messages.
