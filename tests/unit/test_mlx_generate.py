@@ -15,7 +15,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-mx = pytest.importorskip("mlx.core")
+mx = pytest.importorskip("mlx.core", exc_type=ImportError)
 
 from infer_check.backends.mlx_lm import MLXBackend  # noqa: E402
 from infer_check.types import Prompt  # noqa: E402

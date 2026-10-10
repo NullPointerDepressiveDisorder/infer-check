@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, Mock, patch
 from infer_check.types import SweepResult
 
 
-def test_sweep_model_parsing_robustness() -> None:
+def test_sweep_model_parsing_robustness(tmp_path: Path) -> None:
     """Test that sweep command parses model paths robustly, handling extra equals signs."""
     # Create a mock SweepResult to return from runner.sweep
     mock_sweep_result = SweepResult(
@@ -34,10 +34,9 @@ def test_sweep_model_parsing_robustness() -> None:
 
         runner = CliRunner()
         # Using a subset of arguments to trigger the parsing logic
-        with runner.isolated_filesystem():
-            result = runner.invoke(
-                main, ["sweep", "--models", "bf16==bartowski/Qwen,4bit=bartowski/Qwen", "--prompts", "reasoning"]
-            )
+        result = runner.invoke(
+            main, ["sweep", "--models", "bf16==bartowski/Qwen,4bit=bartowski/Qwen", "--prompts", "reasoning"]
+        )
         assert result.exit_code == 0, result.output
 
         # Check if get_backend_for_model was called with cleaned paths

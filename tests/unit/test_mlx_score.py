@@ -11,8 +11,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-mx = pytest.importorskip("mlx.core")
-pytest.importorskip("mlx_lm")
+mx = pytest.importorskip("mlx.core", exc_type=ImportError)
+pytest.importorskip("mlx_lm", exc_type=ImportError)
 
 from mlx_lm.models.llama import Model, ModelArgs  # noqa: E402
 

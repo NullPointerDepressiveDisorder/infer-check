@@ -14,8 +14,8 @@ import os
 import numpy as np
 import pytest
 
-pytest.importorskip("mlx.core")
-pytest.importorskip("mlx_lm")
+pytest.importorskip("mlx.core", exc_type=ImportError)
+pytest.importorskip("mlx_lm", exc_type=ImportError)
 
 from infer_check.analysis.divergence import teacher_forced_kl  # noqa: E402
 from infer_check.backends.mlx_lm import MLXBackend  # noqa: E402
