@@ -121,3 +121,42 @@ def test_empty_target_and_bad_at_ids(backend: MLXBackend) -> None:
 def test_async_score_entry_point(backend: MLXBackend) -> None:
     scores = asyncio.run(backend.score(Prompt(text="x"), TARGET_IDS, top_k=3))
     assert scores.top_ids.shape == (len(TARGET_IDS), 3)
+
+
+# ── logits_transform (positive-control damage) ──────────────────────
+
+
+def test_logit_noise_is_applied_in_scoring_and_is_deterministic(
+    tiny_model: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infer_check.backends.perturb import fixed_logit_noise
+
+    monkeypatch.setattr(MLXBackend, "_format", lambda self, prompt: "")
+    monkeypatch.setattr(MLXBackend, "_encode", lambda self, formatted: list(PROMPT_IDS))
+    noisy = MLXBackend(model_id="tiny/random", logits_transform=fixed_logit_noise(sigma=1.0, seed=3))
+    noisy._model, noisy._tokenizer = tiny_model, object()
+
+    # Reference: the clean logits plus the same fixed bias, renormalised.
+    logits = tiny_model(mx.array(PROMPT_IDS + TARGET_IDS)[None])[0].astype(mx.float32)
+    bias = mx.random.normal((VOCAB,), key=mx.random.key(3)) * 1.0
+    noisy_logits = logits + bias
+    lp = noisy_logits - mx.logsumexp(noisy_logits, axis=-1, keepdims=True)
+    start = len(PROMPT_IDS) - 1
+    ref = np.array(lp[start : start + len(TARGET_IDS)])
+
+    ids = np.array([[t] for t in TARGET_IDS])
+    first = noisy._score(Prompt(text="x"), TARGET_IDS, top_k=0, at_ids=ids)
+    second = noisy._score(Prompt(text="x"), TARGET_IDS, top_k=0, at_ids=ids)
+    assert first.at_logprobs is not None and second.at_logprobs is not None
+    np.testing.assert_allclose(first.at_logprobs[:, 0], ref[np.arange(len(TARGET_IDS)), TARGET_IDS], atol=1e-4)
+    np.testing.assert_array_equal(first.at_logprobs, second.at_logprobs)
+
+
+def test_zero_noise_is_identity(backend: MLXBackend, tiny_model: Any) -> None:
+    from infer_check.backends.perturb import fixed_logit_noise
+
+    clean = backend._score(Prompt(text="x"), TARGET_IDS, top_k=5, at_ids=None)
+    backend._logits_transform = fixed_logit_noise(sigma=0.0)
+    same = backend._score(Prompt(text="x"), TARGET_IDS, top_k=5, at_ids=None)
+    np.testing.assert_array_equal(clean.top_ids, same.top_ids)
+    np.testing.assert_allclose(clean.top_logprobs, same.top_logprobs)

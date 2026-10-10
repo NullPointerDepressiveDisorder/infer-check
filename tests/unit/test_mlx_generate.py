@@ -227,3 +227,20 @@ def test_health_check_uses_real_generation_path(backend: MLXBackend, fake_mlx_lm
 
     fake_mlx_lm["raises"] = RuntimeError("broken")
     assert asyncio.run(backend.health_check()) is False
+
+
+def test_logits_transform_reaches_generation(backend: MLXBackend, fake_mlx_lm: dict[str, Any]) -> None:
+    seen: list[Any] = []
+    backend._logits_transform = lambda logits: seen.append(logits) or logits
+    fake_mlx_lm["responses"] = [resp("", EOS, "stop")]
+    run(backend, Prompt(id="p", text="hi"))
+    processors = fake_mlx_lm["calls"][0]["logits_processors"]
+    assert len(processors) == 1
+    marker = object()
+    assert processors[0]([1, 2], marker) is marker and seen == [marker]
+
+
+def test_no_logits_processors_by_default(backend: MLXBackend, fake_mlx_lm: dict[str, Any]) -> None:
+    fake_mlx_lm["responses"] = [resp("", EOS, "stop")]
+    run(backend, Prompt(id="p", text="hi"))
+    assert "logits_processors" not in fake_mlx_lm["calls"][0]

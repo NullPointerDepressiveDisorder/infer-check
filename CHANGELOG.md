@@ -1,5 +1,14 @@
 # Unreleased
 
+- **Changed: `stress` now tests batch composition, and can fail.**
+  - Each prompt first runs alone as the reference. At each concurrency level it is then sent together with N−1 randomly drawn other prompts (`--seed`, `--trials`), and its output is compared token-for-token with the solo run.
+  - Results list every diverged prompt (first differing token, co-scheduled prompts) and distinct error messages.
+  - `stress` refuses to run on backends without real concurrency (in-process mlx-lm, where it could never fail). Backends gain a `supports_concurrency` check in the runner.
+  - On `mlx_lm.server`, batching changed 8 of 24 outputs at 4 in flight, vs 2 of 24 with batching off.
+- **Added: positive controls.**
+  - `MLXBackend(logits_transform=...)` plus `backends.perturb.fixed_logit_noise(sigma)` builds a deliberately degraded model, the same in generation and scoring.
+  - `scripts/positive_controls.py` runs two dose-response sweeps against bf16: 8→4→3→2-bit quantization, building 3/2-bit locally with `mlx_lm.convert`, and injected noise σ. It checks that KL and top-1 disagreement rise monotonically and that σ=0 gives KL exactly 0.
+
 - **Changed: smaller result files.** Per-token top-K distributions are now dropped from saved results (and checkpoints) once KL has been computed. They were ~90% of file size, about 400 KB per prompt; a 12-prompt GSM8K compare went from 4.9 MB to 0.6 MB. Pass the global `--keep-distributions` flag to keep them.
 - **Changed: HTML report leads with correctness.**
   - The executive summary shows graded comparisons, regressions and improvements. Its verdict names any statistically significant accuracy loss and no longer calls low text similarity "correctness issues".

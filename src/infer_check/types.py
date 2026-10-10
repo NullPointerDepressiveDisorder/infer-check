@@ -140,12 +140,27 @@ class SweepResult(BaseInferModel):
 
 
 class StressResult(BaseInferModel):
+    """One concurrency level of a stress test.
+
+    At level 1 every prompt runs alone; that is the reference. At level N each
+    prompt (the target) is sent together with N-1 other prompts and its output
+    compared with its solo run. ``results`` holds the target outputs only.
+    """
+
     model_id: str
     backend_name: str
     concurrency_level: int
     results: list[InferenceResult]
     error_count: int
+    # Fraction of compared targets whose output was identical to their solo run.
     output_consistency: float
+    trials: int = 1
+    compared: int = 0
+    # One entry per diverged target: prompt_id, trial, first_divergence (token
+    # index), and co_scheduled (IDs of the prompts it was sent with).
+    divergences: list[dict[str, Any]] = Field(default_factory=list)
+    # Distinct error messages (up to 10) behind ``error_count``.
+    error_messages: list[str] = Field(default_factory=list)
 
 
 class DeterminismResult(BaseInferModel):

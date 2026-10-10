@@ -836,6 +836,14 @@ def diff(
     help="Comma-separated concurrency levels.",
 )
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
+@click.option(
+    "--trials",
+    default=1,
+    show_default=True,
+    type=click.IntRange(min=1),
+    help="Batches per prompt per concurrency level, each with freshly drawn co-scheduled prompts.",
+)
+@click.option("--seed", default=0, show_default=True, help="Seed for choosing co-scheduled prompts.")
 @common_options
 @click.pass_context
 def stress(
@@ -846,12 +854,20 @@ def stress(
     output: Path,
     concurrency: str,
     base_url: str | None,
+    trials: int,
+    seed: int,
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
     chat: bool,
 ) -> None:
-    """Stress-test a backend with varying concurrency levels."""
+    """Check that outputs don't change with what else the server is processing.
+
+    Each prompt runs alone first (the reference). Then, at each concurrency
+    level N, it is sent together with N-1 other prompts from the suite, and its
+    output is compared token-for-token with the solo run. Requires an HTTP
+    server backend; in-process mlx-lm can't run requests concurrently.
+    """
     from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
 
@@ -871,12 +887,20 @@ def stress(
         f"[bold cyan]stress[/bold cyan] model={model} backend={backend_instance.name} concurrency={concurrency_levels}"
     )
 
+    if not backend_instance.supports_concurrency:
+        raise click.ClickException(
+            f"The {backend_instance.name} backend runs requests one at a time, so a stress test can't fail on it. "
+            "Point --backend/--base-url at an HTTP server instead (llama-server, vllm-mlx, mlx_lm.server, vLLM)."
+        )
+
     runner = TestRunner()
     stress_results = asyncio.run(
         runner.stress(
             backend=backend_instance,
             prompts=prompt_list,
             concurrency_levels=concurrency_levels,
+            trials=trials,
+            seed=seed,
         )
     )
 
@@ -893,18 +917,40 @@ def stress(
     console.print(f"[green]Results saved to {out_path}[/green]")
 
     table = Table(title="Stress Test Summary", show_header=True, header_style="bold magenta")
-    table.add_column("concurrency", style="cyan", justify="right")
+    table.add_column("in flight", style="cyan", justify="right")
+    table.add_column("compared", justify="right")
+    table.add_column("identical to solo", justify="right")
+    table.add_column("diverged", justify="right")
     table.add_column("errors", justify="right")
-    table.add_column("output_consistency", justify="right")
 
     for sr in stress_results:
+        is_ref = sr.concurrency_level == 1
+        style = "green" if sr.output_consistency == 1.0 else "red"
         table.add_row(
-            str(sr.concurrency_level),
+            f"{sr.concurrency_level}{' (reference)' if is_ref else ''}",
+            str(sr.compared),
+            "—" if is_ref else f"[{style}]{sr.output_consistency:.1%}[/{style}]",
+            "—" if is_ref else str(len(sr.divergences)),
             str(sr.error_count),
-            f"{sr.output_consistency:.2%}",
         )
-
     console.print(table)
+
+    for sr in stress_results:
+        for msg in sr.error_messages[:3]:
+            console.print(f"[yellow]  errors at {sr.concurrency_level} in flight: {msg}[/yellow]")
+
+    diverged = [(sr.concurrency_level, d) for sr in stress_results for d in sr.divergences]
+    if diverged:
+        dt = Table(title="Diverged outputs (vs. the prompt's solo run)", header_style="bold magenta")
+        dt.add_column("in flight", justify="right")
+        dt.add_column("prompt")
+        dt.add_column("first differing token", justify="right")
+        dt.add_column("sent with")
+        for level, d in diverged[:30]:
+            dt.add_row(str(level), d["prompt_id"], str(d["first_divergence"]), ", ".join(d["co_scheduled"][:4]))
+        console.print(dt)
+        if len(diverged) > 30:
+            console.print(f"[dim]... and {len(diverged) - 30} more (see the results file).[/dim]")
 
 
 # ---------------------------------------------------------------------------

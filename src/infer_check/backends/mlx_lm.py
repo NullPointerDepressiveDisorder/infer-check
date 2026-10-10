@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -38,11 +39,20 @@ class MLXBackend(BackendAdapter):
         quantization: str | None = None,
         revision: str | None = None,
         disable_thinking: bool = True,
+        logits_transform: Callable[[mx.array], mx.array] | None = None,
     ) -> None:
+        """
+        Args:
+            logits_transform: Optional function applied to the model's logits at
+                every position, identically in generation and scoring. Used to
+                build deliberately degraded models as positive controls (see
+                ``infer_check.backends.perturb``); leave None for normal use.
+        """
         self._model_id = model_id
         self._quantization = quantization
         self._revision = revision
         self._disable_thinking = disable_thinking
+        self._logits_transform = logits_transform
         self._model: Any = None
         self._tokenizer: Any = None
 
@@ -230,6 +240,11 @@ class MLXBackend(BackendAdapter):
                 distributions.append(vals)
                 distribution_metadata.append({f"id_{i}": t for i, t in enumerate(ids)})
 
+        extra: dict[str, Any] = {}
+        if self._logits_transform is not None:
+            transform = self._logits_transform
+            extra["logits_processors"] = [lambda _tokens, logits: transform(logits)]
+
         start = time.perf_counter()
         for resp in stream_generate(
             self._model,
@@ -237,6 +252,7 @@ class MLXBackend(BackendAdapter):
             prompt_ids,  # pass IDs so BOS handling is under our control
             max_tokens=prompt.max_tokens,
             sampler=make_sampler(temp=temp),
+            **extra,
         ):
             # Always keep the text: the final response carries the detokenizer's flush.
             pieces.append(resp.text)
@@ -314,6 +330,8 @@ class MLXBackend(BackendAdapter):
             for s in range(0, n, chunk_size):
                 logits = self._model(mx.array(feed[s : s + chunk_size])[None], cache=cache)[0]
                 logits = logits.astype(mx.float32)
+                if self._logits_transform is not None:
+                    logits = self._logits_transform(logits)
                 lp = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
 
                 outputs: list[mx.array] = [mx.argmax(lp, axis=-1)]

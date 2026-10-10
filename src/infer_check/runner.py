@@ -663,78 +663,152 @@ class TestRunner:
         self._drop_distributions(comparisons)
         return comparisons
 
+    @staticmethod
+    async def _safe_generate(backend: BackendAdapter, prompt: Prompt) -> InferenceResult | Exception:
+        try:
+            res = await backend.generate(prompt)
+        except Exception as exc:
+            return exc
+        res.metadata["prompt_text"] = prompt.text
+        res.metadata["prompt_category"] = prompt.category
+        return res
+
     async def stress(
         self,
         backend: BackendAdapter,
         prompts: list[Prompt],
         concurrency_levels: list[int] | None = None,
+        *,
+        fillers: list[Prompt] | None = None,
+        trials: int = 1,
+        seed: int = 0,
     ) -> list[StressResult]:
-        """Run stress tests with varying concurrency levels and compare for consistency."""
-        if concurrency_levels is None:
-            concurrency_levels = [1, 2, 4, 8]
+        """Check that a prompt's output doesn't depend on what else is in flight.
 
+        Batching servers compute each request together with whatever else is
+        scheduled, and some kernels give slightly different results depending on
+        batch size and composition. Under greedy decoding a single flipped token
+        changes the rest of the output. This is the main source of serving
+        nondeterminism.
+
+        - Level 1: every prompt runs alone, one at a time. This is the reference.
+        - Level N > 1: each prompt (the target) is sent at the same time as N-1
+          *other* prompts drawn at random (seeded) from ``fillers`` (default: the
+          suite itself), and its output is compared token-for-token with its solo
+          run. Each trial draws new fillers, so batch composition varies.
+
+        Args:
+            backend: Must support real concurrency (an HTTP server). In-process
+                backends run requests one at a time, so the test could never fail.
+            prompts: Targets.
+            concurrency_levels: Requests in flight per batch; 1 is always run first.
+            fillers: Prompts to co-schedule with each target (default: ``prompts``).
+            trials: Batches per target per level, each with fresh fillers.
+            seed: Seed for filler selection, so runs are reproducible.
+
+        Raises:
+            ValueError: if the backend doesn't support concurrency.
+        """
+        import random
+
+        if not backend.supports_concurrency:
+            raise ValueError(
+                f"The {backend.name} backend runs requests one at a time, so a stress test can't fail on it. "
+                "Run stress against an HTTP server (llama-server, vllm-mlx, mlx_lm.server, vLLM, ...)."
+            )
+        levels = sorted({lvl for lvl in (concurrency_levels or [1, 2, 4, 8]) if lvl >= 1} | {1})
+        pool = fillers or prompts
+        rng = random.Random(seed)  # nosec B311 - reproducible test sampling, not security
+
+        total = len(prompts) * (1 + trials * (len(levels) - 1))
         results: list[StressResult] = []
-        baseline_results: dict[str, InferenceResult] = {}
 
         with Progress() as progress:
-            task = progress.add_task("[magenta]Running stress test...", total=len(concurrency_levels) * len(prompts))
+            task = progress.add_task("[magenta]Stress: solo reference...", total=total)
 
-            for concurrency in concurrency_levels:
-                sem = asyncio.Semaphore(concurrency)
+            def note(messages: list[str], exc: Exception) -> None:
+                msg = f"{type(exc).__name__}: {exc}"[:300]
+                if msg not in messages and len(messages) < 10:
+                    messages.append(msg)
 
-                async def _run(p: Prompt, _sem: asyncio.Semaphore = sem) -> InferenceResult | Exception:
-                    async with _sem:
-                        try:
-                            res = await backend.generate(p)
-                            res.metadata["prompt_text"] = p.text
-                            res.metadata["prompt_category"] = p.category
-                            return res
-                        except Exception as e:
-                            return e
-
-                coros = [_run(p) for p in prompts]
-                # Gather returns results in the same order as coros
-                batch_results_or_errs = await asyncio.gather(*coros, return_exceptions=True)
-                progress.advance(task, advance=len(prompts))
-
-                valid_results: list[InferenceResult] = []
-                error_count = 0
-                for r in batch_results_or_errs:
-                    if isinstance(r, BaseException):
-                        error_count += 1
-                    else:
-                        valid_results.append(r)
-
-                consistent_count = 0
-                total_compared = 0
-
-                if not baseline_results:
-                    # Treat the first run (e.g. concurrency=1) as the baseline
-                    for valid_res in valid_results:
-                        baseline_results[valid_res.prompt_id] = valid_res
-
-                for valid_res in valid_results:
-                    b = baseline_results.get(valid_res.prompt_id)
-                    if b:
-                        total_compared += 1
-                        if b.text == valid_res.text:
-                            consistent_count += 1
-
-                output_consistency = consistent_count / max(1, total_compared)
-
-                # Prefer what the server reported; fall back to the backend's own ID
-                # (e.g. when every request at this level errored).
-                model_id = valid_results[0].model_id if valid_results else backend.model_id
-
-                sr = StressResult(
-                    model_id=model_id,
+            # ── Level 1: each prompt alone ──────────────────────────────
+            solo: dict[str, InferenceResult] = {}
+            solo_errors = 0
+            solo_messages: list[str] = []
+            for prompt in prompts:
+                out = await self._safe_generate(backend, prompt)
+                if isinstance(out, Exception):
+                    solo_errors += 1
+                    note(solo_messages, out)
+                    _warn(f"Solo run failed for '{prompt.id}': {out}")
+                else:
+                    solo[prompt.id] = out
+                progress.advance(task)
+            results.append(
+                StressResult(
+                    model_id=next(iter(solo.values())).model_id if solo else backend.model_id,
                     backend_name=backend.name,
-                    concurrency_level=concurrency,
-                    results=valid_results,
-                    error_count=error_count,
-                    output_consistency=output_consistency,
+                    concurrency_level=1,
+                    results=list(solo.values()),
+                    error_count=solo_errors,
+                    output_consistency=1.0,  # the reference, by definition
+                    compared=len(solo),
+                    error_messages=solo_messages,
                 )
-                results.append(sr)
+            )
+
+            # ── Level N: each target alongside N-1 other prompts ────────
+            for level in levels[1:]:
+                progress.update(task, description=f"[magenta]Stress: {level} in flight...")
+                outputs: list[InferenceResult] = []
+                divergences: list[dict[str, Any]] = []
+                messages: list[str] = []
+                errors = consistent = compared = 0
+                for trial in range(trials):
+                    for target in prompts:
+                        reference = solo.get(target.id)
+                        if reference is None:
+                            progress.advance(task)
+                            continue
+                        others = [p for p in pool if p.id != target.id] or pool
+                        k = level - 1
+                        chosen = rng.sample(others, k) if len(others) >= k else [rng.choice(others) for _ in range(k)]
+                        batch = await asyncio.gather(*(self._safe_generate(backend, p) for p in [target, *chosen]))
+                        for o in batch:
+                            if isinstance(o, Exception):
+                                errors += 1
+                                note(messages, o)
+                        out = batch[0]
+                        progress.advance(task)
+                        if isinstance(out, Exception):
+                            continue
+                        compared += 1
+                        outputs.append(out)
+                        if out.text == reference.text:
+                            consistent += 1
+                        else:
+                            divergences.append(
+                                {
+                                    "prompt_id": target.id,
+                                    "trial": trial,
+                                    "first_divergence": first_divergence(reference, out),
+                                    "co_scheduled": [p.id for p in chosen],
+                                }
+                            )
+                results.append(
+                    StressResult(
+                        model_id=outputs[0].model_id if outputs else backend.model_id,
+                        backend_name=backend.name,
+                        concurrency_level=level,
+                        results=outputs,
+                        error_count=errors,
+                        output_consistency=consistent / compared if compared else 0.0,
+                        trials=trials,
+                        compared=compared,
+                        divergences=divergences,
+                        error_messages=messages,
+                    )
+                )
 
         return results
 
