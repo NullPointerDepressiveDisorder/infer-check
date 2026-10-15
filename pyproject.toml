@@ -9,7 +9,7 @@ dynamic = ["version"]
 description = "Correctness and reliability testing for LLM inference engines"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Karan Kunal Mohindroo", email = "karan@karankm.com" }]
 keywords = ["llm", "testing", "correctness", "reliability", "quantization"]
 classifiers = [
@@ -35,10 +35,15 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
-    "ruff>=0.15.5",
+    "ruff>=0.16.9",
 ]
 all = ["infer-check[mlx]", "infer-check[analysis]", "infer-check[http]"]
-mlx = ["mlx>=0.31.0", "mlx-lm<0.31.0"]
+mlx = [
+    "mlx>=0.31.0; sys_platform == 'darwin'",
+    # On Linux, plain `mlx` installs without its backend library (libmlx.so); the cpu extra provides it.
+    "mlx[cpu]>=0.31.0; sys_platform == 'linux'",
+    "mlx-lm<0.31.0",
+]
 analysis = ["matplotlib>=3.10.8", "scikit-learn>=1.8.0"]
 http = [
     "transformers>=5.3.0",
@@ -64,7 +69,7 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
-    "ruff>=0.15.5",
+    "ruff>=0.16.9",
 ]
 docs = [
     "mkdocs>=1.6.1",
@@ -89,9 +94,12 @@ targets = ["src"]
 exclude_dirs = ["tests"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -q --tb=short"
+addopts = "-ra -q --tb=short -m 'not slow'"
+markers = [
+    "slow: end-to-end tests against real models (downloads weights). Run with: pytest -m slow",
+]

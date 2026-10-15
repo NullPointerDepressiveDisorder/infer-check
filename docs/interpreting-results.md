@@ -15,13 +15,37 @@ Every per-prompt comparison is classified into one of four severity tiers based 
 
 Text similarity is computed using `difflib.SequenceMatcher`, which measures the ratio of matching characters between the two outputs.
 
+## Correctness (answer keys)
+
+Prompts can carry an answer key: an `answer_type` (`integer`, `decimal`, `boolean` or `choice`) and an `expected` value. For these prompts, infer-check grades each response against the key rather than comparing two outputs to each other. This is the most direct measure of whether a quantization or backend broke something.
+
+The prompt sent to the model gets a fixed instruction appended: work step by step, then end with `Final answer: <answer>`. The grader reads the last `Final answer:` line, or the last `\boxed{...}` if there isn't one. Numbers may be written with commas, as `1.5e9`, `1.5 × 10^9`, `10^9`, or as a fraction `a/b`. Integers must match exactly; decimals within a relative tolerance of 10⁻⁶.
+
+Each response gets one of four grades:
+
+| Grade | Meaning |
+|-------|---------|
+| `correct` | Parsed answer matches the key |
+| `wrong` | Parsed answer doesn't match |
+| `unparsed` | No `Final answer:` line or `\boxed{}`; counts as wrong for accuracy |
+| `truncated` | No answer because generation hit `max_tokens`; see the truncation rule below |
+
+**Truncation rule.** When one configuration hits the token limit on a prompt that the other one finished, the truncation counts as wrong. This both lowers its accuracy and enters the paired table: a regression if the other side was right, both wrong otherwise. Running out of budget where the other model didn't is that model's own failure, typically a repetition loop. When both configurations hit the limit, the prompt is excluded (`both_truncated`), because the budget itself is the likely cause. In that case, raise `max_tokens`.
+
+Comparisons are reported as a paired table: both right, **regressions** (A right, B wrong), **improvements** (A wrong, B right), and both wrong. The headline is "B regressed on *r* prompts and improved on *i*", with an exact McNemar test on those discordant pairs. A small p-value means the difference is unlikely to be chance. Each side's accuracy comes with a 95% Wilson confidence interval.
+
+!!! tip "You need many prompts"
+    With 100 prompts and a handful of regressions, McNemar can't detect anything. Use the `gsm8k` suite (1,319 problems) for quantization comparisons, and pick prompts the baseline mostly gets right. Two different wrong answers say nothing about whether quantization broke the model.
+
+Bundled answer keys: all of `gsm8k`, and 43 of the 100 `adversarial-numerics` prompts (only those with a single unambiguous answer, computed by `scripts/build_answer_keys.py`).
+
 ## Flip rate
 
-The flip rate is the fraction of prompts where the **functional answer** changed between the two models or backends. Unlike text similarity (which measures surface-level text overlap), flip rate uses answer extraction to determine whether the actual answer is different.
+The flip rate is the fraction of **flip-eligible** prompts where the answer changed between the two models or backends.
 
-### Answer extraction strategies
+For prompts with an answer key, a flip means one side is correct and the other wrong. An `unparsed` response is never a flip; a one-sided `truncated` response is treated as wrong, while two-sided truncations are excluded.
 
-`infer-check` extracts the functional answer from each response based on the prompt's category:
+For prompts without a key, infer-check falls back to extracting an answer based on the prompt's category:
 
 | Category | Strategy | What it extracts |
 |----------|----------|-----------------|
@@ -29,7 +53,9 @@ The flip rate is the fraction of prompts where the **functional answer** changed
 | Boolean prompts | `boolean` | Yes/no with negation detection |
 | Code prompts | `code` | Fenced code blocks with whitespace normalization |
 | JSON prompts | `json` | Parsed and canonicalized JSON |
-| Everything else | `raw` | Full lowercased text |
+| Everything else | — | Not flip-eligible (`flipped` is `null`) |
+
+Prompts in categories without an extractor used to be compared by raw text similarity, which made any rewording count as a "flip". They are now excluded from the flip rate.
 
 A "flip" occurs when the extracted answers from two models don't match. For example:
 
@@ -46,22 +72,40 @@ These metrics capture different things:
 
 A response can have "severe" text divergence but no flip (e.g., different reasoning paths reaching the same answer), or "minor" text divergence with a flip (e.g., nearly identical text except the final number is wrong).
 
-Flip rate is generally the more actionable metric for assessing correctness.
+For prompts with answer keys, prefer the correctness table over the flip rate: it says which side was right.
 
 ## KL divergence
 
-KL divergence (Kullback-Leibler divergence) measures how different the token probability distributions are between two backends. It's computed as KL(baseline || test) -- how much information is lost when using the test distribution to approximate the baseline.
+KL divergence measures how different two models' next-token probability distributions are, reported as the mean per-token KL(baseline ‖ test) in nats. Unlike text similarity, it catches drift even when both models happen to generate the same text.
 
-| KL divergence | Interpretation |
+Every comparison records which of two methods produced its KL (`kl_method`). The two are not comparable and are never averaged together.
+
+**Teacher-forced** (`teacher_forced`) is used when both backends can score, which today means both are mlx-lm. Both models are run over the baseline's exact output tokens, so at every position they predict the next token from identical context. The baseline's top 64 tokens are compared individually and all remaining probability is merged into one bucket. This makes the value a slight underestimate of the full-vocabulary KL, by a negligible amount in practice.
+
+**Prefix** (`prefix`) is an approximate fallback for backends that can't score, such as HTTP servers. It uses the stored top-K distributions, but only at positions where both generations still share the same context. That means everything up to and including the first token where the outputs differ. Past that point the models are continuing different text, and comparing them is meaningless. Expect few positions and a rougher number.
+
+| Mean KL (nats/token) | Interpretation |
 |---------------|----------------|
-| 0.0 | Identical distributions |
-| < 0.01 | Very similar -- negligible difference |
-| 0.01 - 0.1 | Small differences in token probabilities |
-| 0.1 - 1.0 | Moderate divergence -- different confidence levels |
-| > 1.0 | Large divergence -- fundamentally different predictions |
+| 0.0 | Identical distributions (expected for a baseline self-check) |
+| < 0.01 | Negligible: typical of 8-bit vs. bf16 |
+| 0.01 - 0.1 | Noticeable: typical of 4-bit, more so on small models |
+| 0.1 - 1.0 | Large: the model's predictions are materially different |
+| > 1.0 | Very large: likely broken |
+
+As a reference point, Qwen2.5-0.5B-Instruct on 30 reasoning prompts measured 0.0006 for 8-bit and 0.092 for 4-bit against bf16. Small models are more sensitive to quantization than large ones.
+
+Related fields:
+
+- `top1_agreement`: the fraction of positions where both models' most likely token is the same.
+- `kl_max` and `kl_p99`: localized spikes that the mean hides.
+- `kl_per_token`: the per-position values.
+- `kl_positions`: how many positions the KL was computed over.
 
 !!! note
-    KL divergence is only available when both backends provide logprobs or token probability distributions. Not all backends support this. When unavailable, the field is `null` in the output.
+    Teacher-forced KL feeds the baseline's token IDs to the test model, so both must share a tokenizer, for example different quantizations of the same model. When neither method is possible, all KL fields are `null`.
+
+!!! note "Stored distributions"
+    The per-token top-K distributions used to compute KL are dropped from saved results once KL is computed, because they make files about 20× larger. Run with `infer-check --keep-distributions <command> ...` to keep them for your own analysis.
 
 ## Text similarity
 

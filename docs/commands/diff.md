@@ -76,7 +76,8 @@ A 100% similarity with 0% flip rate means the serving layer introduces zero dive
 Results are saved as a JSON array of `ComparisonResult` objects, each containing:
 
 - `baseline` / `test` -- the `InferenceResult` from each backend
-- `kl_divergence` -- KL(baseline || test) if logprobs are available
+- `kl_divergence` -- mean per-token KL(baseline || test), with `kl_method` saying how it was computed (`teacher_forced` when both backends can score, otherwise `prefix`); see [Interpreting results](../interpreting-results.md#kl-divergence)
+- `top1_agreement` -- fraction of positions where both backends' most likely token matches
 - `token_divergence_index` -- first token where the outputs differ
 - `text_similarity` -- 0-1 similarity score
 - `is_failure` -- true if similarity < 0.5

@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from infer_check.types import (
     CompareResult,
     ComparisonResult,
@@ -33,8 +35,8 @@ def _try_load_compare(data: Any) -> CompareResult | None:
     try:
         if isinstance(data, dict):
             return CompareResult.model_validate(data)
-    except Exception:
-        pass
+    except ValidationError:
+        return None
     return None
 
 
@@ -43,8 +45,8 @@ def _try_load_sweep(data: Any) -> SweepResult | None:
     try:
         if isinstance(data, dict):
             return SweepResult.model_validate(data)
-    except Exception:
-        pass
+    except ValidationError:
+        return None
     return None
 
 
@@ -53,8 +55,8 @@ def _try_load_comparison_list(data: Any) -> list[ComparisonResult] | None:
     try:
         if isinstance(data, list) and data:
             return [ComparisonResult.model_validate(item) for item in data]
-    except Exception:
-        pass
+    except ValidationError:
+        return None
     return None
 
 
@@ -63,8 +65,8 @@ def _try_load_stress(data: Any) -> StressResult | None:
     try:
         if isinstance(data, dict):
             return StressResult.model_validate(data)
-    except Exception:
-        pass
+    except ValidationError:
+        return None
     return None
 
 
@@ -73,8 +75,8 @@ def _try_load_stress_list(data: Any) -> list[StressResult] | None:
     try:
         if isinstance(data, list) and data:
             return [StressResult.model_validate(item) for item in data]
-    except Exception:
-        pass
+    except ValidationError:
+        return None
     return None
 
 
@@ -83,8 +85,8 @@ def _try_load_determinism(data: Any) -> DeterminismResult | None:
     try:
         if isinstance(data, dict):
             return DeterminismResult.model_validate(data)
-    except Exception:
-        pass
+    except ValidationError:
+        return None
     return None
 
 
@@ -93,8 +95,8 @@ def _try_load_determinism_list(data: Any) -> list[DeterminismResult] | None:
     try:
         if isinstance(data, list) and data:
             return [DeterminismResult.model_validate(item) for item in data]
-    except Exception:
-        pass
+    except ValidationError:
+        return None
     return None
 
 
