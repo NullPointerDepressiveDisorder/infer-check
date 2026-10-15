@@ -394,6 +394,10 @@ def test_flip_rate_agrees_with_correctness_on_truncation(tmp_path: Path) -> None
         def supports_scoring(self) -> bool:
             return False
 
+        @property
+        def tokenizer_fingerprint(self) -> str | None:
+            return None
+
         async def score(self, prompt: Prompt, target_ids: list[int], *, top_k: int = 64, at_ids: Any = None) -> Any:
             raise NotImplementedError
 

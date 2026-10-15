@@ -1,5 +1,13 @@
 # Unreleased
 
+- **Fixed: huge numbers in model answers no longer abort a run.** An answer like `10^369693099` (a plausible wrong answer to the 9^(9^9) digit-count prompt) raised `decimal.Overflow` and killed the whole compare/sweep. Parsing and grading now use a widened decimal range, so such answers are graded wrong. Exponents beyond even that range, or longer than Python's 4300-digit limit, are unparsed; the leading "10" of a failed `10^…` is never taken as the answer.
+- **Fixed: malformed answer keys fail when the suite loads**, not mid-run or silently. `integer` must be a whole number, `decimal` a finite number, `boolean` one of yes/no/true/false, `choice` a single letter or digit. Previously `boolean` + `"maybe"` loaded and graded every response wrong.
+- **Fixed: token-level metrics across different tokenizers.**
+  - Backends expose `tokenizer_fingerprint`: a hash of the vocabulary for mlx-lm, `None` (unknown) for HTTP backends.
+  - When both sides are known and differ, KL, top-1 agreement and token divergence are skipped, with a warning; correctness and text similarity are still reported. Previously, comparing two model families on mlx-lm fed one model's token IDs to the other and reported meaningless KL.
+- **Changed: positive controls check accuracy the right way.** The most-damaged level must show a statistically significant accuracy loss (exact McNemar p < 0.05). Accuracy is deliberately not required to fall monotonically, because small damage moves it a few prompts in either direction. Top-1 disagreement is now also checked for the noise sweep.
+- **Docs:** the flip-rate section now matches the truncation rule: a one-sided truncation is a flip, a two-sided one is excluded.
+
 - **Fixed: degradation cliff.**
   - It was computed by an unused function, walked quantization levels alphabetically ("3bit" < "4bit" < "8bit"), and was never written to the sweep summary, so the report never showed it.
   - It is now the first level, in the order you list them, with a statistically significant accuracy loss vs. the baseline (more regressions than improvements, exact McNemar p < 0.05). The sweep table and HTML report show it.

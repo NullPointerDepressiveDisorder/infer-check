@@ -40,6 +40,10 @@ class FakeServer(BackendAdapter):
     def supports_scoring(self) -> bool:
         return False
 
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        return None
+
     async def score(self, prompt: Prompt, target_ids: list[int], *, top_k: int = 64, at_ids: Any = None) -> TokenScores:
         raise NotImplementedError
 

@@ -2,14 +2,24 @@
 
 Two dose-response experiments against a bf16 baseline:
 
-1. Quantization: 8 -> 4 -> 3 -> 2 bits. Lower precision should mean higher KL,
-   lower top-1 agreement and (eventually) more regressions.
+1. Quantization: 8 -> 4 -> 3 -> 2 bits.
 2. Injected logit noise: a fixed random bias of size sigma added to every logit
-   (``infer_check.backends.perturb.fixed_logit_noise``). sigma = 0 must give
-   KL = 0 exactly; larger sigma must give monotonically more damage.
+   (``infer_check.backends.perturb.fixed_logit_noise``).
 
-If either curve is not monotonic, the metrics are broken. The script prints
-both tables and a PASS/FAIL line per check, and saves the raw results.
+Checks, per experiment:
+
+- KL and top-1 disagreement must rise monotonically with damage. They are
+  near-deterministic, so any inversion means the metrics are broken.
+- sigma = 0 must give KL exactly 0.
+- The most-damaged level must show a statistically significant accuracy loss
+  (more regressions than improvements, exact McNemar p < 0.05).
+
+Accuracy is deliberately *not* required to fall monotonically: at small damage
+it moves by a few prompts in either direction (in one 60-prompt run, 8-bit went
+39% -> 46% and sigma=0.25 39% -> 44%, both p > 0.25). That is sampling noise,
+and a strict check would fail on honest results. Suites without answer keys
+skip the accuracy check. The script prints a PASS/FAIL/SKIP line per check and
+saves the raw results.
 
 Usage (Apple Silicon):
     python scripts/positive_controls.py                      # Qwen2.5-0.5B, 100 GSM8K prompts
@@ -74,6 +84,25 @@ def fmt_row(label: str, kl: dict[str, Any], corr: dict[str, Any] | None) -> str:
     return f"  {label:12} {kl_s:>8} {top1:>8}   {acc:>17}   {flips}"
 
 
+def disagreement(stats: dict[str, Any]) -> float | None:
+    """1 - top-1 agreement, or None when unavailable."""
+    top1 = stats.get("mean_top1_agreement")
+    return None if top1 is None else 1 - top1
+
+
+def check_detects_damage(name: str, table: dict[str, Any] | None, alpha: float = 0.05) -> bool:
+    """PASS if ``table`` (a paired-correctness table) shows a significant accuracy loss."""
+    if not table:
+        print(f"  SKIP: {name}: suite has no answer keys")
+        return True
+    ok = table["regressions"] > table["improvements"] and table["mcnemar_p"] < alpha
+    print(
+        f"  {'PASS' if ok else 'FAIL'}: {name}: {table['regressions']} regressions vs "
+        f"{table['improvements']} improvements, p={table['mcnemar_p']:.2g}"
+    )
+    return ok
+
+
 def check_monotonic(name: str, values: list[float | None], eps: float = 1e-9) -> bool:
     vals = [v for v in values if v is not None]
     ok = len(vals) == len(values) and all(b >= a - eps for a, b in zip(vals, vals[1:], strict=False))
@@ -116,8 +145,9 @@ def main() -> int:
     all_ok &= check_monotonic("KL with fewer bits", [kl_by[q]["mean_kl"] for q in levels])
     all_ok &= check_monotonic(
         "top-1 disagreement with fewer bits",
-        [None if kl_by[q]["mean_top1_agreement"] is None else 1 - kl_by[q]["mean_top1_agreement"] for q in levels],
+        [disagreement(kl_by[q]) for q in levels],
     )
+    all_ok &= check_detects_damage(f"significant accuracy loss at {levels[-1]}", corr_by.get(levels[-1]))
 
     # ── 2. Injected-noise dose-response ────────────────────────────
     # One sweep: the bf16 baseline is generated once, every σ is scored against it.
@@ -143,6 +173,11 @@ def main() -> int:
         print(f"  {'PASS' if zero_ok else 'FAIL'}: σ=0 gives KL exactly 0 (got {kls[0]})")
         all_ok &= zero_ok
     all_ok &= check_monotonic("KL with more noise", kls)
+    all_ok &= check_monotonic(
+        "top-1 disagreement with more noise",
+        [disagreement(nkl[label]) for label in labels],
+    )
+    all_ok &= check_detects_damage(f"significant accuracy loss at {labels[-1]}", ncorr.get(labels[-1]))
 
     (args.out / "summary.json").write_text(
         json.dumps(

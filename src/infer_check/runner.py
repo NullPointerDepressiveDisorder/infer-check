@@ -45,6 +45,17 @@ def flip_rate(comparisons: list[ComparisonResult]) -> float:
     return sum(1 for c in eligible if c.metadata["flipped"]) / len(eligible) if eligible else 0.0
 
 
+def tokenizers_conflict(a: BackendAdapter, b: BackendAdapter) -> bool:
+    """True only when both tokenizer fingerprints are known and differ.
+
+    Token IDs from one tokenizer mean different tokens to another, so KL, top-1
+    agreement and token divergence between such backends are meaningless. An
+    unknown fingerprint (HTTP backends) means "can't tell", not "conflict".
+    """
+    fa, fb = a.tokenizer_fingerprint, b.tokenizer_fingerprint
+    return fa is not None and fb is not None and fa != fb
+
+
 def find_degradation_cliff(
     levels: list[str],
     baseline: str,
@@ -127,6 +138,20 @@ class TestRunner:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.keep_distributions = keep_distributions
+        self._tokenizer_warned: set[tuple[int, int]] = set()
+
+    def _token_level(self, a: BackendAdapter, b: BackendAdapter) -> bool:
+        """Whether token-level metrics are meaningful between ``a`` and ``b`` (warns once per pair)."""
+        if not tokenizers_conflict(a, b):
+            return True
+        if (id(a), id(b)) not in self._tokenizer_warned:
+            self._tokenizer_warned.add((id(a), id(b)))
+            _warn(
+                f"{a.name} ({a.model_id}) and {b.name} ({b.model_id}) use different tokenizers: "
+                "token-level metrics (KL, top-1 agreement, token divergence) skipped. "
+                "Correctness and text similarity are still reported."
+            )
+        return False
 
     def _drop_distributions(self, comparisons: list[ComparisonResult]) -> None:
         """Release stored top-K distributions once KL has been computed (unless keeping them)."""
@@ -215,6 +240,7 @@ class TestRunner:
         test: InferenceResult,
         threshold: float = 0.5,
         kl: KLStats | None = None,
+        token_level: bool = True,
     ) -> ComparisonResult:
         """Compare a test result against a baseline.
 
@@ -249,9 +275,11 @@ class TestRunner:
         else:
             severity = "severe"
 
-        token_divergence_index = first_divergence(baseline, test)
-
-        if kl is None:
+        # Token IDs are only comparable when both sides share a tokenizer.
+        token_divergence_index = first_divergence(baseline, test) if token_level else None
+        if not token_level:
+            kl = None
+        elif kl is None:
             kl = prefix_kl(baseline, test, token_divergence_index)
 
         return ComparisonResult(
@@ -309,15 +337,16 @@ class TestRunner:
         prompt: Prompt,
         baseline: InferenceResult,
         ref: TokenScores | None,
+        token_level: bool = True,
     ) -> KLStats | None:
         """Score the baseline's tokens with ``backend`` and compare against ``ref``.
 
-        Assumes the two models share a tokenizer (e.g. quantizations of the same
-        model), since the baseline's token IDs are fed to the test model as-is.
-        Returns None (so the caller falls back to prefix KL) when either side
-        can't score.
+        The baseline's token IDs are fed to the test model as-is, so this only
+        makes sense when both share a tokenizer; callers pass ``token_level``
+        from ``_token_level``. Returns None when token-level metrics are off,
+        or when either side can't score (the caller then falls back to prefix KL).
         """
-        if ref is None or not backend.supports_scoring or not baseline.token_ids:
+        if not token_level or ref is None or not backend.supports_scoring or not baseline.token_ids:
             return None
         try:
             scores = await backend.score(prompt, baseline.token_ids, top_k=0, at_ids=ref.top_ids)
@@ -443,8 +472,9 @@ class TestRunner:
 
                     baseline = baseline_results.get(res.prompt_id)
                     if baseline:
-                        kl = await self._teacher_forced(backend, prompt, baseline, refs.get(prompt.id))
-                        comp = self._compare(baseline, res, kl=kl)
+                        tl = self._token_level(baseline_backend, backend)
+                        kl = await self._teacher_forced(backend, prompt, baseline, refs.get(prompt.id), tl)
+                        comp = self._compare(baseline, res, kl=kl, token_level=tl)
                         self._annotate_flip_metadata(comp, prompt)
                         all_comparisons.append(comp)
                         if comp.is_failure:
@@ -573,12 +603,13 @@ class TestRunner:
                 progress.advance(task)
 
         # ── Build comparisons with answer extraction ────────────────
+        tl = self._token_level(backend_a, backend_b)
         for prompt in prompts:
             a = results_a.get(prompt.id)
             b = results_b.get(prompt.id)
             if a and b:
-                kl = await self._teacher_forced(backend_b, prompt, a, refs.get(prompt.id))
-                comp = self._compare(a, b, kl=kl)
+                kl = await self._teacher_forced(backend_b, prompt, a, refs.get(prompt.id), tl)
+                comp = self._compare(a, b, kl=kl, token_level=tl)
                 self._annotate_flip_metadata(comp, prompt)
                 comparisons.append(comp)
 
@@ -695,8 +726,9 @@ class TestRunner:
                         continue
                     baseline = baseline_results.get(test_res.prompt_id)
                     if baseline:
-                        kl = await self._teacher_forced(test_backend, prompt, baseline, refs.get(prompt.id))
-                        comp = self._compare(baseline, test_res, kl=kl)
+                        tl = self._token_level(baseline_backend, test_backend)
+                        kl = await self._teacher_forced(test_backend, prompt, baseline, refs.get(prompt.id), tl)
+                        comp = self._compare(baseline, test_res, kl=kl, token_level=tl)
                         self._annotate_flip_metadata(comp, prompt)
                         comparisons.append(comp)
                     progress.advance(task)

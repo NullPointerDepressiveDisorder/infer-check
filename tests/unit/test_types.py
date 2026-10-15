@@ -1,4 +1,8 @@
 import json
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
 
 from infer_check.types import ComparisonResult, InferenceResult, Prompt
 
@@ -63,3 +67,50 @@ def test_comparison_result_is_failure() -> None:
         failure_reason="Backend failure",
     )
     assert res3.is_failure
+
+
+@pytest.mark.parametrize(
+    ("answer_type", "expected", "message"),
+    [
+        ("boolean", "maybe", "yes/no/true/false"),
+        ("integer", "3.5", "not an integer"),
+        ("integer", "three", "not a number"),
+        ("decimal", "NaN", "finite"),
+        ("decimal", "Infinity", "finite"),
+        ("choice", "AB", "single letter or digit"),
+        ("choice", "?", "single letter or digit"),
+    ],
+)
+def test_prompt_rejects_malformed_answer_keys(answer_type: str, expected: str, message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Prompt(text="x", answer_type=answer_type, expected=expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("answer_type", "expected"),
+    [
+        ("integer", "18.0"),
+        ("integer", "1e5"),
+        ("integer", "-7"),
+        ("integer", " 42 "),
+        ("decimal", "0.125"),
+        ("decimal", "-1.5e-3"),
+        ("boolean", "Yes"),
+        ("boolean", "false"),
+        ("choice", "b"),
+        ("choice", "3"),
+    ],
+)
+def test_prompt_accepts_canonical_answer_keys(answer_type: str, expected: str) -> None:
+    assert Prompt(text="x", answer_type=answer_type, expected=expected).is_graded  # type: ignore[arg-type]
+
+
+def test_malformed_key_fails_when_the_suite_loads(tmp_path: Path) -> None:
+    from infer_check.suites.loader import load_suite
+
+    suite = tmp_path / "bad.jsonl"
+    suite.write_text(
+        '{"id": "q1", "text": "Is it?", "answer_type": "boolean", "expected": "maybe"}\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match=r"bad\.jsonl:1"):
+        load_suite(suite)

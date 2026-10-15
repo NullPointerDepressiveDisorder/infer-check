@@ -71,6 +71,29 @@ def test_parse_number(ans: str, value: str) -> None:
     assert parse_number(ans) == Decimal(value)
 
 
+@pytest.mark.parametrize(
+    ("ans", "value"),
+    [
+        ("10^1000000", "1E+1000000"),
+        ("10^369693099", "1E+369693099"),
+        ("2 x 10^1000000", "2E+1000000"),
+    ],
+)
+def test_parse_number_handles_huge_exponents(ans: str, value: str) -> None:
+    assert parse_number(ans) == Decimal(value)
+
+
+@pytest.mark.parametrize(
+    "ans",
+    [
+        "10^" + "9" * 5000,  # exponent larger than Python's 4300-digit int-conversion limit
+        "10^" + "9" * 25,  # exponent larger than Decimal's widened container
+    ],
+)
+def test_unevaluable_exponent_is_unparsed_not_its_leading_10(ans: str) -> None:
+    assert parse_number(ans) is None
+
+
 def test_parse_number_none() -> None:
     assert parse_number("no idea") is None
 
@@ -113,6 +136,18 @@ def test_bad_answer_key_raises() -> None:
         is_correct("Final answer: 3", "three", "integer")
 
 
+@pytest.mark.parametrize("answer_type", ["integer", "decimal"])
+def test_huge_values_grade_wrong_instead_of_raising(answer_type: str) -> None:
+    # Parses fine, then used to overflow in the decimal tolerance subtraction.
+    assert is_correct("Final answer: 1e1000000", "2", answer_type) is False  # type: ignore[arg-type]
+    assert is_correct("Final answer: 10^369693099", "369693100", answer_type) is False  # type: ignore[arg-type]
+
+
+def test_unrepresentable_plain_number_is_unparsed() -> None:
+    # An exponent this large can't be constructed as a Decimal at all.
+    assert is_correct("Final answer: 1e999999999999999999999", "2", "decimal") is None
+
+
 # ── grade / prompts ─────────────────────────────────────────────────
 
 
@@ -153,6 +188,11 @@ def test_prompt_validates_answer_keys() -> None:
     with pytest.raises(ValidationError, match="answer_type is 'free'"):
         Prompt(text="x", expected="4")
     assert Prompt(text="x", answer_type="boolean", expected="yes").is_graded
+
+
+def test_grade_survives_a_huge_answer() -> None:
+    p = Prompt(id="p", text="How many digits does 9^(9^9) have?", answer_type="integer", expected="369693100")
+    assert grade(_result("Roughly 10^369693099.\nFinal answer: 10^369693099"), p) == "wrong"
 
 
 # ── statistics ──────────────────────────────────────────────────────

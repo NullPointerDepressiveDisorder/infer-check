@@ -31,11 +31,24 @@ def exact_kl(tau_p: float, tau_q: float) -> float:
 
 
 class AnalyticBackend(BackendAdapter):
-    def __init__(self, name: str, tau: float, scoring: bool = True) -> None:
+    def __init__(
+        self,
+        name: str,
+        tau: float,
+        scoring: bool = True,
+        fingerprint: str | None = "vocab-a",
+        text: str | None = None,
+    ) -> None:
         self._name = name
         self._lp = log_softmax(BASE_LOGITS / tau)
         self._scoring = scoring
+        self._fingerprint = fingerprint
+        self._text = text
         self.score_calls: list[dict[str, Any]] = []
+
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        return self._fingerprint
 
     @property
     def name(self) -> str:
@@ -65,7 +78,7 @@ class AnalyticBackend(BackendAdapter):
             token_ids=[0] * N_TOKENS,
             distributions=[dist] * N_TOKENS,
             distribution_metadata=[meta] * N_TOKENS,
-            text="a" * N_TOKENS,
+            text=self._text or "a" * N_TOKENS,
             latency_ms=1.0,
             metadata={"finish_reason": "stop"},
         )
@@ -231,3 +244,75 @@ async def test_sweep_checkpoints_exclude_distributions(tmp_path: Path) -> None:
     assert all(c.baseline.distributions is None for c in res.comparisons)
     # KL was still computed from them before they were dropped.
     assert res.summary["kl_by_quant"]["4bit"]["mean_kl"] > 0
+
+
+# ── tokenizer compatibility ─────────────────────────────────────────
+
+
+def test_tokenizers_conflict_truth_table() -> None:
+    from infer_check.runner import tokenizers_conflict
+
+    a = AnalyticBackend("a", 1.0, fingerprint="vocab-a")
+    assert not tokenizers_conflict(a, AnalyticBackend("b", 1.0, fingerprint="vocab-a"))
+    assert tokenizers_conflict(a, AnalyticBackend("b", 1.0, fingerprint="vocab-b"))
+    # Unknown on either side means "can't tell", not "conflict".
+    assert not tokenizers_conflict(a, AnalyticBackend("b", 1.0, fingerprint=None))
+    assert not tokenizers_conflict(
+        AnalyticBackend("a", 1.0, fingerprint=None), AnalyticBackend("b", 1.0, fingerprint=None)
+    )
+
+
+GRADED = [Prompt(id=f"g{i}", text=f"question {i}", answer_type="integer", expected="7") for i in range(3)]
+
+
+@pytest.mark.asyncio
+async def test_different_tokenizers_skip_token_metrics_but_keep_correctness(runner: TestRunner) -> None:
+    a = AnalyticBackend("a", 1.0, fingerprint="vocab-a", text="Final answer: 7")
+    b = AnalyticBackend("b", 2.0, fingerprint="vocab-b", text="Final answer: 7")
+    res = await runner.compare(a, b, GRADED)
+
+    assert res.kl_method is None and res.mean_kl_divergence is None and res.mean_top1_agreement is None
+    for c in res.comparisons:
+        assert c.kl_divergence is None and c.kl_per_token is None
+        assert c.top1_agreement is None and c.token_divergence_index is None
+    assert b.score_calls == []  # B was never fed A's token IDs
+    assert res.correctness is not None and res.correctness["both_right"] == len(GRADED)
+
+
+@pytest.mark.asyncio
+async def test_tokenizer_mismatch_warns_once_per_pair(runner: TestRunner, capsys: pytest.CaptureFixture[str]) -> None:
+    a = AnalyticBackend("a", 1.0, fingerprint="vocab-a")
+    b = AnalyticBackend("b", 2.0, fingerprint="vocab-b")
+    await runner.diff(a, [b], PROMPTS)  # compares per prompt: 3 checks, one warning
+    assert capsys.readouterr().out.count("use different tokenizers") == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_fingerprint_keeps_current_behaviour(runner: TestRunner) -> None:
+    res = await runner.compare(
+        AnalyticBackend("a", 1.0), AnalyticBackend("b", 2.0, scoring=False, fingerprint=None), PROMPTS
+    )
+    assert res.kl_method == "prefix"
+
+
+@pytest.mark.asyncio
+async def test_sweep_skips_token_metrics_only_for_the_mismatched_level(runner: TestRunner) -> None:
+    backends: dict[str, BackendAdapter] = {
+        "bf16": AnalyticBackend("bf16", 1.0),
+        "4bit": AnalyticBackend("4bit", 2.0),
+        "other": AnalyticBackend("other", 2.0, fingerprint="vocab-b"),
+    }
+    res = await runner.sweep(backends, PROMPTS, ["bf16", "4bit", "other"], model_id="m")
+    kl = res.summary["kl_by_quant"]
+    assert kl["4bit"]["method"] == "teacher_forced"
+    assert kl["other"]["method"] is None and kl["other"]["mean_kl"] is None
+
+
+@pytest.mark.asyncio
+async def test_diff_skips_token_metrics_for_the_mismatched_backend(runner: TestRunner) -> None:
+    comps = await runner.diff(
+        AnalyticBackend("base", 1.0),
+        [AnalyticBackend("same", 2.0), AnalyticBackend("other", 2.0, fingerprint="vocab-b")],
+        PROMPTS,
+    )
+    assert {c.test.backend_name: c.kl_method for c in comps} == {"same": "teacher_forced", "other": None}

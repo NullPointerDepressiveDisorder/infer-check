@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -65,10 +66,26 @@ class Prompt(BaseInferModel):
 
     @model_validator(mode="after")
     def _check_answer_key(self) -> Self:
-        if self.answer_type != "free" and not self.expected:
+        if self.answer_type == "free":
+            if self.expected is not None:
+                raise ValueError(f"prompt '{self.id}': 'expected' given but answer_type is 'free'")
+            return self
+        if not self.expected:
             raise ValueError(f"prompt '{self.id}': answer_type '{self.answer_type}' requires 'expected'")
-        if self.answer_type == "free" and self.expected is not None:
-            raise ValueError(f"prompt '{self.id}': 'expected' given but answer_type is 'free'")
+        key = self.expected.strip()
+        if self.answer_type in ("integer", "decimal"):
+            try:
+                value = Decimal(key)
+            except InvalidOperation:
+                raise ValueError(f"prompt '{self.id}': expected {key!r} is not a number") from None
+            if not value.is_finite():
+                raise ValueError(f"prompt '{self.id}': expected must be finite")
+            if self.answer_type == "integer" and value != value.to_integral_value():
+                raise ValueError(f"prompt '{self.id}': expected {key!r} is not an integer")
+        elif self.answer_type == "boolean" and key.lower() not in {"yes", "no", "true", "false"}:
+            raise ValueError(f"prompt '{self.id}': boolean expected must be yes/no/true/false, got {key!r}")
+        elif self.answer_type == "choice" and not (len(key) == 1 and key.isalnum()):
+            raise ValueError(f"prompt '{self.id}': choice expected must be a single letter or digit, got {key!r}")
         return self
 
     @property

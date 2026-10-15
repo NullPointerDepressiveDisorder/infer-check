@@ -99,6 +99,11 @@ class OpenAICompatBackend(BackendAdapter):
         # Possible later via vLLM's `prompt_logprobs`; not implemented yet.
         return False
 
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        # The server's tokenizer isn't visible over HTTP: "unknown", not "different".
+        return None
+
     async def score(
         self,
         prompt: Prompt,

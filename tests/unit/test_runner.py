@@ -142,6 +142,10 @@ class StubBackend(BackendAdapter):
     def supports_scoring(self) -> bool:
         return False
 
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        return None
+
     async def score(
         self,
         prompt: Prompt,

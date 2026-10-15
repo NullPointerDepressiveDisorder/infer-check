@@ -43,7 +43,7 @@ Bundled answer keys: all of `gsm8k`, and 43 of the 100 `adversarial-numerics` pr
 
 The flip rate is the fraction of **flip-eligible** prompts where the answer changed between the two models or backends.
 
-For prompts with an answer key, a flip means one side is correct and the other wrong. `unparsed` and `truncated` responses are never flips.
+For prompts with an answer key, a flip means one side is correct and the other wrong. An `unparsed` response is never a flip; a one-sided `truncated` response is treated as wrong, while two-sided truncations are excluded.
 
 For prompts without a key, infer-check falls back to extracting an answer based on the prompt's category:
 

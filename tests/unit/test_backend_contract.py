@@ -53,3 +53,37 @@ def test_non_scoring_backends_raise_not_implemented(
 
     with pytest.raises(NotImplementedError):
         asyncio.run(cls(**kwargs).score(Prompt(text="hi"), [1, 2, 3]))
+
+
+# ── tokenizer fingerprints ──────────────────────────────────────────
+
+
+class _Tok:
+    def __init__(self, vocab: dict[str, int]) -> None:
+        self._vocab = vocab
+
+    def get_vocab(self) -> dict[str, int]:
+        return dict(self._vocab)
+
+
+def test_mlx_fingerprint_identifies_the_vocabulary() -> None:
+    import asyncio
+
+    a, b, c = (MLXBackend(model_id="org/model") for _ in range(3))
+    assert a.tokenizer_fingerprint is None  # not loaded yet
+    a._tokenizer = _Tok({"hello": 0, "world": 1})
+    b._tokenizer = _Tok({"world": 1, "hello": 0})  # same vocab, different order
+    c._tokenizer = _Tok({"hello": 0, "there": 1})
+    assert a.tokenizer_fingerprint == b.tokenizer_fingerprint
+    assert a.tokenizer_fingerprint != c.tokenizer_fingerprint
+
+    fp = a.tokenizer_fingerprint
+    asyncio.run(a.cleanup())  # sweep frees the baseline before the test levels run
+    assert a.tokenizer_fingerprint == fp
+
+
+@pytest.mark.parametrize(PARAMS, [b for b in BACKENDS if b[0] is not MLXBackend])
+def test_http_backends_report_unknown_fingerprint(
+    cls: type, kwargs: dict[str, str], concurrent: bool, scoring: bool
+) -> None:
+    assert cls(**kwargs).tokenizer_fingerprint is None

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import hashlib
+import json
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
@@ -55,6 +57,7 @@ class MLXBackend(BackendAdapter):
         self._logits_transform = logits_transform
         self._model: Any = None
         self._tokenizer: Any = None
+        self._tokenizer_fp: str | None = None
 
     # ------------------------------------------------------------------
     # BackendAdapter protocol
@@ -77,6 +80,18 @@ class MLXBackend(BackendAdapter):
     @property
     def supports_scoring(self) -> bool:
         return True
+
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        """Hash of the tokenizer's vocabulary; None until the model is loaded.
+
+        Computed once and kept after ``cleanup()``: a sweep frees the baseline
+        model before the test levels run, but still needs its fingerprint.
+        """
+        if self._tokenizer_fp is None and self._tokenizer is not None:
+            blob = json.dumps(sorted(self._tokenizer.get_vocab().items()), ensure_ascii=False).encode()
+            self._tokenizer_fp = hashlib.sha256(blob).hexdigest()[:16]
+        return self._tokenizer_fp
 
     async def score(
         self,
@@ -172,6 +187,8 @@ class MLXBackend(BackendAdapter):
 
         self._model = res[0]
         self._tokenizer = res[1]
+
+        _ = self.tokenizer_fingerprint  # compute now, while the tokenizer is loaded
 
     def _format(self, prompt: Prompt) -> str:
         """Apply the model's chat template (if any) to the prompt text."""

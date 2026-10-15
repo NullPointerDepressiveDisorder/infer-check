@@ -58,6 +58,11 @@ class LlamaCppBackend(BackendAdapter):
     def supports_scoring(self) -> bool:
         return False
 
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        # The server's tokenizer isn't visible over HTTP: "unknown", not "different".
+        return None
+
     async def score(
         self,
         prompt: Prompt,

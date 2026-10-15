@@ -43,6 +43,15 @@ class BackendAdapter(Protocol):
         """True if ``score()`` is implemented (teacher-forced log-probs)."""
         ...
 
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        """Stable hash of the tokenizer's vocabulary, or None if unknown.
+
+        Token-level metrics (KL, top-1 agreement, token divergence) are only computed
+        between backends whose fingerprints match.
+        """
+        ...
+
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Generate a single inference result for a prompt."""
         ...

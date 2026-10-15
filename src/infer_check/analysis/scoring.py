@@ -16,6 +16,7 @@ both are cut off is excluded (the budget, not the model, is the likely cause).
 from __future__ import annotations
 
 import contextlib
+import decimal
 import math
 import re
 from collections.abc import Iterable
@@ -92,17 +93,29 @@ def final_answer(text: str) -> str | None:
     return None
 
 
+# Default contexts overflow past 1e999999; model output like "10^369693099" is legal.
+_Wide = decimal.Context(prec=50, Emax=decimal.MAX_EMAX, Emin=decimal.MIN_EMIN)
+
+
 def parse_number(ans: str) -> Decimal | None:
     """Parse the first number in ``ans``: plain, comma-grouped, ``1.5e9``,
     ``1.5 × 10^9``, ``10^9``, or a fraction ``a/b``. None if there isn't one."""
     s = ans.replace("\u2212", "-").replace("\u00a0", " ").replace("$", "")
     candidates: list[tuple[int, int, Decimal]] = []  # (start, -length, value)
+    failed: list[int] = []
 
-    for m in _SCI.finditer(s):
-        candidates.append((m.start(), -len(m.group(0)), Decimal(m.group(1)) * Decimal(10) ** int(m.group(2))))
-    for m in _POW10.finditer(s):
-        sign = Decimal(-1) if m.group(1) else Decimal(1)
-        candidates.append((m.start(), -len(m.group(0)), sign * Decimal(10) ** int(m.group(2))))
+    with decimal.localcontext(_Wide):
+        for m in _SCI.finditer(s):
+            try:
+                candidates.append((m.start(), -len(m.group(0)), Decimal(m.group(1)) * Decimal(10) ** int(m.group(2))))
+            except (ArithmeticError, ValueError):  # >4300-digit exponents overflow Decimal; treat as unparseable.
+                failed.append(m.start())
+        for m in _POW10.finditer(s):
+            try:
+                sign = Decimal(-1) if m.group(1) else Decimal(1)
+                candidates.append((m.start(), -len(m.group(0)), sign * Decimal(10) ** int(m.group(2))))
+            except (ArithmeticError, ValueError):
+                failed.append(m.start())
     for m in _FRAC.finditer(s):
         num, den = int(m.group(1)), int(m.group(2))
         if den:
@@ -115,9 +128,11 @@ def parse_number(ans: str) -> Decimal | None:
 
     if not candidates:
         return None
-    # Earliest match wins; at the same position prefer the longest (so "1.5 × 10^9"
-    # beats its leading "1.5", and "3/4" beats "3").
-    return min(candidates, key=lambda c: (c[0], c[1]))[2]
+    best = min(candidates, key=lambda c: (c[0], c[1]))
+    # Don't fall back to the leading "10" of a "10^<huge> we failed to evaluate"
+    if any(start <= best[0] for start in failed):
+        return None
+    return best[2]
 
 
 def is_correct(text: str, expected: str, answer_type: AnswerType) -> bool | None:
@@ -136,9 +151,13 @@ def is_correct(text: str, expected: str, answer_type: AnswerType) -> bool | None
             exp = Decimal(expected)
         except InvalidOperation as exc:
             raise ValueError(f"answer key {expected!r} is not a number") from exc
-        if answer_type == "integer":
-            return got == exp
-        return abs(got - exp) <= Decimal("1e-6") * max(Decimal(1), abs(exp))
+        with decimal.localcontext(_Wide):
+            try:
+                if answer_type == "integer":
+                    return got == exp
+                return abs(got - exp) <= Decimal("1e-6") * max(Decimal(1), abs(exp))
+            except ArithmeticError:
+                return False  # a value beyond even the wide range can't equal a sane key
     if answer_type == "boolean":
         m = _BOOL.search(ans)
         if not m:
@@ -189,7 +208,7 @@ def wilson_interval(successes: int, n: int, z: float = 1.959964) -> tuple[float,
     denom = 1 + z * z / n
     centre = (p + z * z / (2 * n)) / denom
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    return (max(0.0, centre - half), min(1.0, centre + half))
+    return max(0.0, centre - half), min(1.0, centre + half)
 
 
 def paired_correctness(pairs: Iterable[tuple[Grade, Grade]]) -> dict[str, Any] | None:
