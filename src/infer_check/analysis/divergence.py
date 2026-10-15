@@ -76,7 +76,13 @@ def binned_kl(p_lp: npt.ArrayLike, q_lp: npt.ArrayLike) -> npt.NDArray[np.float6
         raise ValueError(f"shape mismatch: {p_log.shape} vs {q_log.shape}")
 
     p, q = np.exp(p_log), np.exp(q_log)
-    kl = np.sum(p * (p_log - q_log), axis=-1)
+    # 0 * log(0 / q) = 0 by convention. Computing it directly gives 0 * -inf = NaN
+    # for -inf log-probs (masked tokens), which would poison every aggregate.
+    # Mass where Q is zero still correctly yields +inf.
+    positive = p > 0
+    terms = np.zeros_like(p)
+    terms[positive] = p[positive] * (p_log[positive] - q_log[positive])
+    kl = np.sum(terms, axis=-1)
 
     p_rest = np.clip(1.0 - p.sum(axis=-1), 0.0, 1.0)
     q_rest = np.clip(1.0 - q.sum(axis=-1), 1e-12, 1.0)

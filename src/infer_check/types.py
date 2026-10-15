@@ -84,8 +84,13 @@ class Prompt(BaseInferModel):
                 raise ValueError(f"prompt '{self.id}': expected {key!r} is not an integer")
         elif self.answer_type == "boolean" and key.lower() not in {"yes", "no", "true", "false"}:
             raise ValueError(f"prompt '{self.id}': boolean expected must be yes/no/true/false, got {key!r}")
-        elif self.answer_type == "choice" and not (len(key) == 1 and key.isalnum()):
-            raise ValueError(f"prompt '{self.id}': choice expected must be a single letter or digit, got {key!r}")
+        elif self.answer_type == "choice" and not (len(key) == 1 and key.isascii() and key.isalnum()):
+            # The grader only matches [A-Za-z0-9]; reject keys it could never match.
+            raise ValueError(
+                f"prompt '{self.id}': choice expected must be a single letter or digit (A-Z, a-z, 0-9), got {key!r}"
+            )
+        # Store the canonical key so every grader sees the same value it was validated as.
+        self.expected = key
         return self
 
     @property

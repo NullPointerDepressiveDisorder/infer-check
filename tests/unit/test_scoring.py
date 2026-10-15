@@ -62,7 +62,6 @@ def test_final_answer_requires_the_marker(text: str) -> None:
         ("10^308", "1e308"),
         ("10**15", "1000000000000000"),
         ("-1/8", "-0.125"),
-        ("1627/2520", str(Decimal(1627) / Decimal(2520))),
         ("$184,345,654.33", "184345654.33"),
         ("about 7 apples", "7"),
     ],
@@ -259,3 +258,50 @@ def test_prompts_where_both_sides_truncate_are_excluded() -> None:
     assert t["a"]["scored"] == 1 and t["b"]["scored"] == 1
     assert t["a"]["truncated"] == 0 and t["b"]["truncated"] == 0
     assert t["n_paired"] == 1 and t["both_right"] == 1
+
+
+# ── fractions that can't be evaluated are unparsed ──────────────────
+
+
+def test_zero_denominator_is_unparsed_not_its_numerator() -> None:
+    assert parse_number("1/0") is None
+    assert is_correct("Final answer: 1/0", "1", "integer") is None  # was graded correct
+
+
+@pytest.mark.parametrize("ans", ["9" * 5000 + "/7", "7/" + "9" * 5000])
+def test_oversized_fraction_is_unparsed_not_an_error(ans: str) -> None:
+    assert parse_number(ans) is None
+
+
+def test_ordinary_fractions_still_parse() -> None:
+    assert parse_number("-1/8") == Decimal("-0.125")
+    assert parse_number("3/4 of the cake") == Decimal("0.75")
+    assert parse_number("6/3") == Decimal(2)  # whole-number fractions are exact
+    # Repeating decimals: precision-independent check (fractions use the widened context).
+    got = parse_number("1627/2520")
+    assert got is not None and abs(got - Decimal(1627) / Decimal(2520)) < Decimal("1e-25")
+
+
+# ── leading-dot decimals ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("ans", "value"),
+    [(".5", "0.5"), ("-.5", "-0.5"), (".5e2", "50"), (".5 × 10^3", "500"), ("-.25 x 10^-2", "-0.0025")],
+)
+def test_leading_dot_decimals(ans: str, value: str) -> None:
+    assert parse_number(ans) == Decimal(value)
+
+
+def test_leading_dot_answers_grade_correctly() -> None:
+    assert is_correct("Final answer: .5", "0.5", "decimal") is True  # was False (parsed as 5)
+    assert is_correct("Final answer: .5", "5", "integer") is False  # was True
+
+
+# ── boolean keys with surrounding whitespace ────────────────────────
+
+
+def test_boolean_key_whitespace_is_ignored() -> None:
+    assert is_correct("Final answer: yes", " yes ", "boolean") is True
+    p = Prompt(text="x", answer_type="boolean", expected=" yes ")
+    assert p.expected == "yes"  # stored canonically

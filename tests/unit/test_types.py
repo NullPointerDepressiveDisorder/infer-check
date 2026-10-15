@@ -79,6 +79,8 @@ def test_comparison_result_is_failure() -> None:
         ("decimal", "Infinity", "finite"),
         ("choice", "AB", "single letter or digit"),
         ("choice", "?", "single letter or digit"),
+        ("choice", "é", "single letter or digit"),  # isalnum() but the grader can't match it
+        ("choice", "²", "single letter or digit"),
     ],
 )
 def test_prompt_rejects_malformed_answer_keys(answer_type: str, expected: str, message: str) -> None:

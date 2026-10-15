@@ -204,7 +204,6 @@ async def test_diff_uses_teacher_forced_when_test_backend_can_score(runner: Test
 
 @pytest.mark.asyncio
 async def test_distributions_dropped_after_kl_by_default(tmp_path: Path) -> None:
-    import json
 
     runner = TestRunner(cache_dir=tmp_path)
     # B can't score, so KL needs A's and B's stored distributions (prefix KL)...
@@ -216,8 +215,24 @@ async def test_distributions_dropped_after_kl_by_default(tmp_path: Path) -> None
         assert c.baseline.distribution_metadata is None and c.test.distribution_metadata is None
         assert c.baseline.token_ids and c.kl_per_token  # everything else is kept
     # Checkpoints written during the run don't carry them either.
-    for f in tmp_path.glob("compare_*.json"):
-        assert '"distributions": null' in f.read_text() or "distributions" not in json.loads(f.read_text())[0]
+    assert_checkpoints_have_no_distributions(tmp_path)
+
+
+def _checkpoint_comparisons(cache_dir: Path) -> list[dict[str, Any]]:
+    import json
+
+    files = list(cache_dir.glob("compare_*.json"))
+    assert files, "compare should write a checkpoint"
+    comps = [comp for f in files for comp in json.loads(f.read_text())]
+    assert comps
+    return comps
+
+
+def assert_checkpoints_have_no_distributions(cache_dir: Path) -> None:
+    for comp in _checkpoint_comparisons(cache_dir):
+        for side in ("baseline", "test"):  # distributions live on the nested results
+            assert comp[side].get("distributions") is None
+            assert comp[side].get("distribution_metadata") is None
 
 
 @pytest.mark.asyncio
@@ -225,6 +240,9 @@ async def test_keep_distributions_retains_them(tmp_path: Path) -> None:
     runner = TestRunner(cache_dir=tmp_path, keep_distributions=True)
     res = await runner.compare(AnalyticBackend("a", 1.0), AnalyticBackend("b", 2.0), PROMPTS)
     assert all(c.baseline.distributions and c.test.distributions for c in res.comparisons)
+    # Proves the checkpoint assertion above can fail: with keep, they are in the file.
+    for comp in _checkpoint_comparisons(tmp_path):
+        assert comp["baseline"]["distributions"] and comp["test"]["distributions"]
 
 
 @pytest.mark.asyncio

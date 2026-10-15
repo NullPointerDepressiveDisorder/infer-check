@@ -73,11 +73,16 @@ def published_or_local(base_repo: str, bits: int, models_dir: Path) -> str:
     return local_quant(base_repo, bits, models_dir)
 
 
+def pct(x: float | None) -> str:
+    """Percentage, or N/A (e.g. accuracy when both sides truncated on every prompt)."""
+    return "N/A" if x is None else f"{x:.1%}"
+
+
 def fmt_row(label: str, kl: dict[str, Any], corr: dict[str, Any] | None) -> str:
     kl_s = f"{kl['mean_kl']:.4f}" if kl.get("mean_kl") is not None else "   N/A"
     top1 = f"{kl['mean_top1_agreement']:.2%}" if kl.get("mean_top1_agreement") is not None else "N/A"
     if corr:
-        acc = f"{corr['a']['accuracy']:.1%} -> {corr['b']['accuracy']:.1%}"
+        acc = f"{pct(corr['a']['accuracy'])} -> {pct(corr['b']['accuracy'])}"
         flips = f"{corr['regressions']:>3} / {corr['improvements']:<3} p={corr['mcnemar_p']:.2g}"
     else:
         acc, flips = "—", "—"
@@ -95,6 +100,12 @@ def check_detects_damage(name: str, table: dict[str, Any] | None, alpha: float =
     if not table:
         print(f"  SKIP: {name}: suite has no answer keys")
         return True
+    if table.get("n_paired") == 0:
+        print(
+            f"  FAIL: {name}: no gradable pairs ({table.get('both_truncated', 0)} prompts truncated on both "
+            "sides); raise max_tokens"
+        )
+        return False
     ok = table["regressions"] > table["improvements"] and table["mcnemar_p"] < alpha
     print(
         f"  {'PASS' if ok else 'FAIL'}: {name}: {table['regressions']} regressions vs "

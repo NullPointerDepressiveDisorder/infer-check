@@ -45,6 +45,26 @@ def test_tail_bin_catches_mass_moved_off_the_top_k() -> None:
     assert binned_kl(p_lp, q_lp)[0] > 1.0
 
 
+def test_zero_probability_bins_contribute_zero() -> None:
+    lp = np.array([[0.0, -np.inf]])
+    assert binned_kl(lp, lp)[0] == 0.0
+    # A -inf bin in P adds nothing, even against a finite Q (used to be 0 * -inf = NaN).
+    out = binned_kl([[np.log(0.5), np.log(0.5), -np.inf]], [[np.log(0.5), np.log(0.4), np.log(0.1)]])
+    assert out[0] == pytest.approx(0.5 * np.log(0.5 / 0.4))
+
+
+def test_mass_where_q_is_zero_is_infinite_divergence() -> None:
+    assert binned_kl([[np.log(0.5), np.log(0.5)]], [[0.0, -np.inf]])[0] == np.inf
+
+
+def test_teacher_forced_stats_stay_finite_with_masked_tokens() -> None:
+    # Fewer unmasked tokens than top-K: the tail of the reference top-K is -inf.
+    lp = np.array([[np.log(0.7), np.log(0.3), -np.inf, -np.inf]])
+    ref = _scores(lp, [0])
+    stats = teacher_forced_kl(ref, _scores(np.zeros((1, 0)), [0], at=lp))
+    assert stats is not None and stats.mean == 0.0 and np.isfinite(stats.per_token).all()
+
+
 def test_shape_mismatch_raises() -> None:
     with pytest.raises(ValueError):
         binned_kl(np.zeros((2, 3)), np.zeros((2, 4)))

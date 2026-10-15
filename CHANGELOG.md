@@ -1,6 +1,11 @@
 # Unreleased
 
 - **Fixed: huge numbers in model answers no longer abort a run.** An answer like `10^369693099` (a plausible wrong answer to the 9^(9^9) digit-count prompt) raised `decimal.Overflow` and killed the whole compare/sweep. Parsing and grading now use a widened decimal range, so such answers are graded wrong. Exponents beyond even that range, or longer than Python's 4300-digit limit, are unparsed; the leading "10" of a failed `10^…` is never taken as the answer.
+- **Fixed: fractions that can't be evaluated are unparsed.** `Final answer: 1/0` used to be graded as its numerator (correct against a key of 1), and fractions with parts over 4300 digits raised and aborted the run.
+- **Fixed: leading-dot decimals.** `.5`, `-.5` and `.5e2` parsed as 5, 5 and 500 (and `.5 × 10^3` as 5000), so correct decimal answers were graded wrong and `.5` matched an integer key of 5.
+- **Fixed: answer-key canonicalization.** Keys are stored stripped, so a boolean key like `" yes "` no longer grades `Final answer: yes` wrong. Choice keys must be ASCII letters or digits, the only ones the grader can match; `"é"` previously loaded and could never be graded correct.
+- **Fixed: positive controls with no gradable pairs.** When both sides truncated on every prompt, the script crashed formatting a missing accuracy. It now shows N/A and fails that check with an explanation (raise `max_tokens`).
+- **Fixed: KL with masked tokens.** A `-inf` log-probability in the compared bins made the per-token KL `NaN` (0 × −∞), which poisoned every pooled mean. Zero-probability bins now contribute 0, by the 0·log 0 = 0 convention; mass where the test model has zero probability still gives `inf`.
 - **Fixed: malformed answer keys fail when the suite loads**, not mid-run or silently. `integer` must be a whole number, `decimal` a finite number, `boolean` one of yes/no/true/false, `choice` a single letter or digit. Previously `boolean` + `"maybe"` loaded and graded every response wrong.
 - **Fixed: token-level metrics across different tokenizers.**
   - Backends expose `tokenizer_fingerprint`: a hash of the vocabulary for mlx-lm, `None` (unknown) for HTTP backends.

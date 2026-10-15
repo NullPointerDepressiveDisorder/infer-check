@@ -20,7 +20,12 @@ def pc() -> ModuleType:
 
 
 def _table(regressions: int, improvements: int, p: float) -> dict[str, Any]:
-    return {"regressions": regressions, "improvements": improvements, "mcnemar_p": p}
+    return {
+        "regressions": regressions,
+        "improvements": improvements,
+        "mcnemar_p": p,
+        "n_paired": regressions + improvements + 10,
+    }
 
 
 def test_significant_loss_at_max_damage_passes(pc: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
@@ -55,3 +60,13 @@ def test_check_monotonic(pc: ModuleType) -> None:
 def test_disagreement(pc: ModuleType) -> None:
     assert pc.disagreement({"mean_top1_agreement": 0.93}) == pytest.approx(0.07)
     assert pc.disagreement({"mean_top1_agreement": None}) is None
+
+
+def test_all_truncated_table_renders_and_fails_clearly(pc: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    from infer_check.analysis.scoring import paired_correctness
+
+    table = paired_correctness([("truncated", "truncated")] * 3)
+    row = pc.fmt_row("2bit", {"mean_kl": 1.0, "mean_top1_agreement": 0.5}, table)  # used to raise TypeError
+    assert "N/A -> N/A" in row
+    assert pc.check_detects_damage("2bit", table) is False
+    assert "no gradable pairs" in capsys.readouterr().out

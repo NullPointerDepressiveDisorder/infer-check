@@ -73,10 +73,14 @@ def model_input(prompt: Prompt) -> str:
 _FINAL = re.compile(r"final\s+answer\s*\**\s*[:：]\s*\**\s*(.+)", re.IGNORECASE)
 _BOXED = re.compile(r"\\boxed\{((?:[^{}]|\{[^{}]*\})*)\}")
 
-_SCI = re.compile(r"(-?\d+(?:\.\d+)?)\s*(?:[x×*·]|\\times|\\cdot)\s*10\s*(?:\^|\*\*)\s*\{?\s*([-+]?\d+)\s*\}?")
+# Mantissas may omit the leading zero (".5", "-.5"); otherwise ".5" would parse as 5.
+_SCI = re.compile(
+    r"(-?(?:\d+(?:\.\d+)?|\.\d+))"  # mantissa
+    r"\s*(?:[x×*·]|\\times|\\cdot)\s*10\s*(?:\^|\*\*)\s*\{?\s*([-+]?\d+)\s*\}?"  # × 10^exponent
+)
 _POW10 = re.compile(r"(?<![\d.])(-?)10\s*(?:\^|\*\*)\s*\{?\s*([-+]?\d+)\s*\}?")
 _FRAC = re.compile(r"(?<![\d.])(-?\d+)\s*/\s*(\d+)(?![\d.])")
-_NUM = re.compile(r"-?\d[\d,]*(?:\.\d+)?(?:[eE][-+]?\d+)?")
+_NUM = re.compile(r"-?(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
 _BOOL = re.compile(r"\b(yes|no|true|false)\b", re.IGNORECASE)
 _CHOICE = re.compile(r"\(?\b([A-Za-z0-9])\b\)?")
 
@@ -116,11 +120,12 @@ def parse_number(ans: str) -> Decimal | None:
                 candidates.append((m.start(), -len(m.group(0)), sign * Decimal(10) ** int(m.group(2))))
             except (ArithmeticError, ValueError):
                 failed.append(m.start())
-    for m in _FRAC.finditer(s):
-        num, den = int(m.group(1)), int(m.group(2))
-        if den:
-            f = Fraction(num, den)
-            candidates.append((m.start(), -len(m.group(0)), Decimal(f.numerator) / Decimal(f.denominator)))
+        for m in _FRAC.finditer(s):
+            try:
+                f = Fraction(int(m.group(1)), int(m.group(2)))  # ZeroDivisionError on x/0
+                candidates.append((m.start(), -len(m.group(0)), Decimal(f.numerator) / Decimal(f.denominator)))
+            except (ArithmeticError, ValueError):  # x/0, or a part longer than 4300 digits
+                failed.append(m.start())
     plain = _NUM.search(s)
     if plain:
         with contextlib.suppress(InvalidOperation):
@@ -129,7 +134,8 @@ def parse_number(ans: str) -> Decimal | None:
     if not candidates:
         return None
     best = min(candidates, key=lambda c: (c[0], c[1]))
-    # Don't fall back to the leading "10" of a "10^<huge> we failed to evaluate"
+    # Never fall back to the leading digits of a form we failed to evaluate
+    # (the "10" of "10^<huge>", the "1" of "1/0").
     if any(start <= best[0] for start in failed):
         return None
     return best[2]
@@ -163,7 +169,8 @@ def is_correct(text: str, expected: str, answer_type: AnswerType) -> bool | None
         if not m:
             return None
         norm = {"yes": "yes", "true": "yes", "no": "no", "false": "no"}
-        return norm[m.group(1).lower()] == norm.get(expected.lower(), expected.lower())
+        key = expected.strip().lower()
+        return norm[m.group(1).lower()] == norm.get(key, key)
     if answer_type == "choice":
         m = _CHOICE.search(ans)
         if not m:
