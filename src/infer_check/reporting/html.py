@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, Undefined
+from pydantic import ValidationError
 
 from infer_check.types import (
     CompareResult,
@@ -203,6 +204,7 @@ _HTML_TEMPLATE = """\
     .cliff-callout .icon { font-size: 1.1rem; }
 
     /* ── Details / Expandable rows ── */
+    .subhead { font-size:0.8rem; text-transform:uppercase; color:var(--text-dim); margin:0.5rem 0 0.75rem; letter-spacing:0.05em; }
     details summary {
       cursor: pointer;
       color: var(--accent);
@@ -333,21 +335,27 @@ _HTML_TEMPLATE = """\
   <section id="summary">
     <h2>Executive Summary</h2>
     <div class="summary-grid">
+      {% if graded_totals %}
       <div class="stat-card">
-        <div class="label">Total Tests</div>
+        <div class="label">Graded Comparisons</div>
+        <div class="value">{{ graded_totals.graded }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Regressions</div>
+        <div class="value {{ 'bad' if graded_totals.regressions > graded_totals.improvements else 'ok' }}">{{ graded_totals.regressions }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Improvements</div>
+        <div class="value">{{ graded_totals.improvements }}</div>
+      </div>
+      {% endif %}
+      <div class="stat-card">
+        <div class="label">Comparisons</div>
         <div class="value">{{ total_tests }}</div>
       </div>
       <div class="stat-card">
-        <div class="label">Failures</div>
-        <div class="value {{ 'bad' if total_failures > 0 else 'ok' }}">{{ total_failures }}</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Pass Rate</div>
-        <div class="value {{
-          'ok' if pass_rate >= 90 else ('warn' if pass_rate >= 70 else 'bad')
-        }}">
-          {{ pass_rate }}%
-        </div>
+        <div class="label">Text Similarity &lt; 50%</div>
+        <div class="value {{ 'warn' if total_failures > 0 else 'ok' }}">{{ total_failures }}</div>
       </div>
       <div class="stat-card">
         <div class="label">Backends</div>
@@ -365,6 +373,36 @@ _HTML_TEMPLATE = """\
   {% if sweep_rows %}
   <section id="sweep">
     <h2>Quantization Sweep</h2>
+    {% if sweep_levels %}
+    <h4 class="subhead">By level, against the baseline</h4>
+    <div class="table-wrap" style="margin-bottom:1.5rem;">
+      <table style="font-size:0.85rem;">
+        <thead>
+          <tr>
+            <th>Level</th>
+            <th>Accuracy (baseline → level)</th>
+            <th>Regressions / improvements</th>
+            <th>McNemar p</th>
+            <th>Mean KL</th>
+            <th>Top-1 agreement</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sweep_levels %}
+          <tr>
+            <td><code>{{ row.level }}</code>{% if row.is_baseline %} <small style="color:var(--text-dim);">(self-check)</small>{% endif %}</td>
+            <td>{% if row.correctness %}{{ row.correctness.a.acc }} → {{ row.correctness.b.acc }} <small style="color:var(--text-dim);">({{ row.correctness.graded }} graded)</small>{% else %}—{% endif %}</td>
+            <td>{% if row.correctness %}<span class="chip {{ 'chip-fail' if row.correctness.significant_regression else 'chip-ok' }}">{{ row.correctness.regressions }} / {{ row.correctness.improvements }}</span>{% else %}—{% endif %}</td>
+            <td style="font-family:monospace;">{{ row.correctness.p if row.correctness else '—' }}</td>
+            <td style="font-family:monospace;">{{ row.kl }}</td>
+            <td>{{ row.top1 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    <h4 class="subhead">Text similarity per prompt</h4>
     <div class="table-wrap">
       <table>
         <thead>
@@ -396,9 +434,10 @@ _HTML_TEMPLATE = """\
     {% if degradation_cliff %}
     <div class="cliff-callout">
       <span class="icon">⚠️</span>
-      <span><strong>Degradation cliff detected</strong> at quantization level
-        <code>{{ degradation_cliff }}</code> — failure rate jumps more than 2× vs.
-        the previous level.</span>
+      <span><strong>Degradation cliff</strong> at <code>{{ degradation_cliff.level }}</code>: the first
+        level (in the order tested) with a statistically significant accuracy loss vs. the baseline —
+        {{ degradation_cliff.regressions }} regressions vs {{ degradation_cliff.improvements }} improvements,
+        exact McNemar p = {{ '%.2g' % degradation_cliff.mcnemar_p }}.</span>
     </div>
     {% endif %}
   </section>
@@ -416,20 +455,67 @@ _HTML_TEMPLATE = """\
           <p style="font-size:0.8rem; color:var(--text-dim);">{{ run.backend_a }} &middot; {{ run.backend_b }} &middot; {{ run.timestamp }}</p>
         </div>
         <div style="text-align:right;">
+          {% if run.correctness %}
+          <div class="chip {{ 'chip-fail' if run.correctness.significant_regression else 'chip-ok' }}" style="font-size:0.9rem; padding:4px 12px;">
+            {{ run.correctness.regressions }} regressions / {{ run.correctness.improvements }} improvements
+          </div>
+          {% else %}
           <div class="chip {{ 'chip-fail' if run.flip_rate > 0.1 else 'chip-ok' }}" style="font-size:0.9rem; padding:4px 12px;">
             Flip Rate: {{ run.flip_rate_pct }}%
           </div>
+          {% endif %}
         </div>
       </div>
 
-      <div class="metrics-row" style="margin-bottom:1.5rem; gap:2rem;">
+      {% if run.correctness %}
+      {% set cr = run.correctness %}
+      <h4 class="subhead">Correctness vs answer keys ({{ cr.graded }} graded prompts)</h4>
+      <div class="metrics-row" style="margin-bottom:1rem; gap:2rem;">
         <div class="metric">
-          <span class="mlabel">Mean Similarity</span>
-          <span class="mval" style="font-size:1.25rem;">{{ run.mean_similarity_pct }}%</span>
+          <span class="mlabel">Accuracy {{ cr.label_a }}</span>
+          <span class="mval" style="font-size:1.25rem;">{{ cr.a.acc }}</span>
+          <small style="color:var(--text-dim);">95% CI {{ cr.a.ci }} · {{ cr.a.frac }}</small>
         </div>
         <div class="metric">
-          <span class="mlabel">Mean KL Div</span>
+          <span class="mlabel">Accuracy {{ cr.label_b }}</span>
+          <span class="mval" style="font-size:1.25rem;">{{ cr.b.acc }}</span>
+          <small style="color:var(--text-dim);">95% CI {{ cr.b.ci }} · {{ cr.b.frac }}</small>
+        </div>
+        <div class="metric">
+          <span class="mlabel">Exact McNemar p</span>
+          <span class="mval" style="font-size:1.25rem;">{{ cr.p }}</span>
+          <small style="color:var(--text-dim);">on {{ cr.regressions + cr.improvements }} discordant pairs</small>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-bottom:0.5rem; max-width:520px;">
+        <table style="font-size:0.85rem;">
+          <thead><tr><th></th><th>{{ cr.label_b }} right</th><th>{{ cr.label_b }} wrong</th></tr></thead>
+          <tbody>
+            <tr><th>{{ cr.label_a }} right</th><td>{{ cr.both_right }}</td><td><span class="chip chip-fail">{{ cr.regressions }}</span></td></tr>
+            <tr><th>{{ cr.label_a }} wrong</th><td><span class="chip chip-ok">{{ cr.improvements }}</span></td><td>{{ cr.both_wrong }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% if cr.notes %}<p style="font-size:0.75rem; color:var(--text-dim); margin-bottom:1.25rem;">{{ cr.notes }}</p>{% endif %}
+      {% endif %}
+
+      <div class="metrics-row" style="margin-bottom:1.5rem; gap:2rem;">
+        <div class="metric">
+          <span class="mlabel">Mean KL</span>
           <span class="mval" style="font-size:1.25rem;">{{ run.mean_kl }}</span>
+          <small style="color:var(--text-dim);">{{ run.kl_method }}</small>
+        </div>
+        <div class="metric">
+          <span class="mlabel">Top-1 Agreement</span>
+          <span class="mval" style="font-size:1.25rem;">{{ run.top1 }}</span>
+        </div>
+        <div class="metric">
+          <span class="mlabel">Flip Rate</span>
+          <span class="mval" style="font-size:1.25rem;">{{ run.flip_rate_pct }}%</span>
+        </div>
+        <div class="metric">
+          <span class="mlabel">Mean Text Similarity</span>
+          <span class="mval" style="font-size:1.25rem;">{{ run.mean_similarity_pct }}%</span>
         </div>
         <div class="metric">
           <span class="mlabel">Total Comparisons</span>
@@ -477,7 +563,8 @@ _HTML_TEMPLATE = """\
             <th>Baseline</th>
             <th>Test Backend</th>
             <th>Similarity</th>
-            <th>KL Div</th>
+            <th>Answer</th>
+            <th>KL</th>
             <th>Outputs</th>
           </tr>
         </thead>
@@ -498,6 +585,7 @@ _HTML_TEMPLATE = """\
                 {{ row.similarity }}%
               </span>
             </td>
+            <td>{% if row.grades %}<span class="chip {{ 'chip-fail' if row.regressed else 'chip-ok' }}">{{ row.grades }}</span>{% else %}<span style="color:var(--text-dim);">—</span>{% endif %}</td>
             <td style="font-family:monospace;">{{ row.kl }}</td>
             <td>
               <details>
@@ -532,10 +620,11 @@ _HTML_TEMPLATE = """\
           <tr>
             <th>Model ID</th>
             <th>Backend</th>
-            <th>Concurrency</th>
-            <th>Requests</th>
+            <th>In flight</th>
+            <th>Compared</th>
             <th>Errors</th>
-            <th>Consistency</th>
+            <th>Identical to solo</th>
+            <th>Diverged</th>
           </tr>
         </thead>
         <tbody>
@@ -543,17 +632,31 @@ _HTML_TEMPLATE = """\
           <tr>
             <td style="font-family:monospace;font-size:0.78rem;">{{ row.model_id }}</td>
             <td>{{ row.backend_name }}</td>
-            <td>{{ row.concurrency_level }}</td>
-            <td>{{ row.num_results }}</td>
+            <td>{{ row.concurrency_level }}{% if row.is_reference %} <small style="color:var(--text-dim);">(reference)</small>{% endif %}</td>
+            <td>{{ row.compared }}</td>
             <td>
-              <span class="chip {{ 'chip-fail' if row.error_count > 0 else 'chip-ok' }}">
+              <span class="chip {{ 'chip-fail' if row.error_count > 0 else 'chip-ok' }}" title="{{ row.error_messages }}">
                 {{ row.error_count }}
               </span>
             </td>
             <td>
-              <span class="chip {{ 'chip-ok' if row.consistency_raw >= 0.9 else 'chip-fail' }}">
+              {% if row.is_reference %}—{% else %}
+              <span class="chip {{ 'chip-ok' if row.consistency_raw == 1.0 else 'chip-fail' }}">
                 {{ row.output_consistency }}%
               </span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.divergences %}
+              <details>
+                <summary>{{ row.divergences | length }} prompt(s)</summary>
+                <ul style="font-size:0.75rem; margin:0.4rem 0 0 1rem;">
+                  {% for d in row.divergences %}
+                  <li><code>{{ d.prompt_id }}</code>: first differing token {{ d.first_divergence }}; sent with {{ d.co_scheduled | join(", ") }}</li>
+                  {% endfor %}
+                </ul>
+              </details>
+              {% else %}—{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -701,21 +804,23 @@ def _similarity_to_hsl(similarity: float) -> tuple[str, str]:
 
 
 def _try_load(raw: Any, cls: Any) -> Any | None:
+    """Parse *raw* as *cls*, or None if it's a different result type."""
+    if not isinstance(raw, dict):
+        return None
     try:
-        if isinstance(raw, dict):
-            return cls.model_validate(raw)
-    except Exception:
-        pass
-    return None
+        return cls.model_validate(raw)
+    except ValidationError:
+        return None
 
 
 def _try_load_list(raw: Any, cls: Any) -> list[Any] | None:
+    """Parse *raw* as a list of *cls*, or None if it's a different result type."""
+    if not isinstance(raw, list) or not raw:
+        return None
     try:
-        if isinstance(raw, list) and raw:
-            return [cls.model_validate(item) for item in raw]
-    except Exception:
-        pass
-    return None
+        return [cls.model_validate(item) for item in raw]
+    except ValidationError:
+        return None
 
 
 def _load_results(results_dir: Path) -> dict[str, list[Any]]:
@@ -823,11 +928,92 @@ def _build_sweep_context(
     cliff = None
     for sweep in sweeps:
         c = sweep.summary.get("degradation_cliff") if sweep.summary else None
-        if c:
+        if isinstance(c, dict):  # older result files stored a bare string from a different rule
             cliff = c
             break
 
     return {"sweep_rows": rows, "quant_cols": quant_cols, "degradation_cliff": cliff}
+
+
+def _fmt_pct(x: float | None, digits: int = 1) -> str:
+    return "N/A" if x is None else f"{x * 100:.{digits}f}%"
+
+
+def _kl_method_label(method: str | None) -> str:
+    return {"teacher_forced": "teacher-forced", "prefix": "prefix (approximate)"}.get(method or "", "")
+
+
+def _kl_text(mean: float | None, method: str | None) -> str:
+    if mean is None:
+        return "N/A"
+    label = _kl_method_label(method)
+    return f"{mean:.4f} ({label})" if label else f"{mean:.4f}"
+
+
+def _correctness_view(table: dict[str, Any] | None, label_a: str, label_b: str) -> dict[str, Any] | None:
+    """Display-ready version of a ``paired_correctness`` table (None if no answer keys)."""
+    if not table:
+        return None
+
+    def side(s: dict[str, Any]) -> dict[str, Any]:
+        ci = s.get("accuracy_ci95")
+        return {
+            "acc": _fmt_pct(s.get("accuracy")),
+            "ci": f"{ci[0] * 100:.1f}–{ci[1] * 100:.1f}%" if ci else "N/A",
+            "frac": f"{s.get('correct', 0)}/{s.get('scored', 0)}",
+        }
+
+    regressions, improvements = table.get("regressions", 0), table.get("improvements", 0)
+    p = float(table.get("mcnemar_p", 1.0))
+    notes = []
+    a, b = table.get("a", {}), table.get("b", {})
+    if a.get("unparsed") or b.get("unparsed"):
+        notes.append(f"No parseable answer: {a.get('unparsed', 0)} ({label_a}) / {b.get('unparsed', 0)} ({label_b}).")
+    if a.get("truncated") or b.get("truncated"):
+        notes.append(
+            f"Hit the token limit where the other side finished, counted wrong: "
+            f"{a.get('truncated', 0)} ({label_a}) / {b.get('truncated', 0)} ({label_b})."
+        )
+    if table.get("both_truncated"):
+        notes.append(f"Both hit the token limit, excluded: {table['both_truncated']}.")
+    return {
+        "label_a": label_a,
+        "label_b": label_b,
+        "graded": table.get("n_graded", 0),
+        "a": side(a),
+        "b": side(b),
+        "both_right": table.get("both_right", 0),
+        "regressions": regressions,
+        "improvements": improvements,
+        "both_wrong": table.get("both_wrong", 0),
+        "p": f"{p:.3g}",
+        "significant_regression": regressions > improvements and p < 0.05,
+        "notes": " ".join(notes),
+    }
+
+
+def _build_sweep_levels(sweeps: list[SweepResult]) -> list[dict[str, Any]]:
+    """One row per quantization level: correctness and KL against the baseline."""
+    rows: list[dict[str, Any]] = []
+    for sweep in sweeps:
+        summary = sweep.summary or {}
+        corr = summary.get("correctness_by_quant") or {}
+        kl = summary.get("kl_by_quant") or {}
+        if not corr and not kl:
+            continue  # results from before these summaries existed
+        base = summary.get("baseline_quant") or (sweep.quantization_levels[0] if sweep.quantization_levels else "")
+        for level in sweep.quantization_levels:
+            k = kl.get(level) or {}
+            rows.append(
+                {
+                    "level": level,
+                    "is_baseline": level == base,
+                    "correctness": _correctness_view(corr.get(level), base, level),
+                    "kl": _kl_text(k.get("mean_kl"), k.get("method")),
+                    "top1": _fmt_pct(k.get("mean_top1_agreement"), 2),
+                }
+            )
+    return rows
 
 
 def _build_compare_context(compare_results: list[CompareResult]) -> list[dict[str, Any]]:
@@ -846,6 +1032,9 @@ def _build_compare_context(compare_results: list[CompareResult]) -> list[dict[st
                 if c.mean_text_similarity is not None
                 else "N/A",
                 "mean_kl": f"{c.mean_kl_divergence:.4f}" if c.mean_kl_divergence is not None else "N/A",
+                "kl_method": _kl_method_label(c.kl_method),
+                "top1": _fmt_pct(c.mean_top1_agreement, 2),
+                "correctness": _correctness_view(c.correctness, c.model_a, c.model_b),
                 "count": len(c.comparisons),
                 "timestamp": c.timestamp.strftime("%Y-%m-%d %H:%M"),
                 "per_category": c.per_category_stats,
@@ -868,7 +1057,14 @@ def _build_diff_context(diff_batches: list[list[ComparisonResult]]) -> list[dict
                     "test_quant": comp.test.quantization or "—",
                     "similarity": f"{comp.text_similarity * 100:.1f}",
                     "similarity_raw": comp.text_similarity,
-                    "kl": f"{comp.kl_divergence:.4f}" if comp.kl_divergence is not None else "N/A",
+                    "kl": _kl_text(comp.kl_divergence, comp.kl_method),
+                    "grades": (
+                        f"{comp.metadata['grade_a']} → {comp.metadata['grade_b']}"
+                        if comp.metadata.get("grade_a") and comp.metadata.get("grade_b")
+                        else None
+                    ),
+                    "regressed": comp.metadata.get("grade_a") == "correct"
+                    and comp.metadata.get("grade_b") != "correct",
                     "baseline_text": comp.baseline.text,
                     "test_text": comp.test.text,
                     "is_failure": comp.is_failure,
@@ -941,6 +1137,10 @@ def _build_stress_context(stress_results: list[StressResult]) -> list[dict[str, 
                 "output_consistency": f"{s.output_consistency * 100:.1f}",
                 "consistency_raw": s.output_consistency,
                 "num_results": len(s.results),
+                "compared": s.compared or len(s.results),
+                "is_reference": s.concurrency_level == 1,
+                "divergences": s.divergences,
+                "error_messages": "; ".join(s.error_messages),
             }
         )
     rows.sort(key=lambda r: (r["backend_name"], r["concurrency_level"]))
@@ -1029,13 +1229,58 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
     backend_count = len(backend_names)
     quant_count = len({c.test.quantization for c in all_comparisons if c.test.quantization})
 
-    verdict = (
-        f"{total_failures} correctness issue(s) found across "
-        f"{backend_count} backend(s) and {quant_count} quantization level(s)."
-    )
+    # Answer-key correctness, summed over every non-baseline comparison set.
+    from infer_check.runner import correctness_summary
+
+    graded_tables: list[tuple[str, dict[str, Any]]] = []
+    for compare in compare_results:
+        if compare.correctness:
+            graded_tables.append((f"{compare.model_a} → {compare.model_b}", compare.correctness))
+    for sweep in sweeps:
+        base = (sweep.summary or {}).get("baseline_quant")
+        for level, table in ((sweep.summary or {}).get("correctness_by_quant") or {}).items():
+            if table and level != base:
+                graded_tables.append((f"{base} → {level}", table))
+    for batch in diff_batches:
+        by_backend: dict[str, list[ComparisonResult]] = {}
+        for comp in batch:
+            by_backend.setdefault(comp.test.backend_name, []).append(comp)
+        for name, comps in by_backend.items():
+            table = correctness_summary(comps)
+            if table:
+                graded_tables.append((f"{comps[0].baseline.backend_name} → {name}", table))
+
+    graded_totals = None
+    if graded_tables:
+        graded_totals = {
+            "graded": sum(t.get("n_graded", 0) for _, t in graded_tables),
+            "regressions": sum(t.get("regressions", 0) for _, t in graded_tables),
+            "improvements": sum(t.get("improvements", 0) for _, t in graded_tables),
+        }
+        significant = [
+            f"{name} (p={t['mcnemar_p']:.2g})"
+            for name, t in graded_tables
+            if t.get("regressions", 0) > t.get("improvements", 0) and t.get("mcnemar_p", 1.0) < 0.05
+        ]
+        verdict = (
+            f"Graded against answer keys: {graded_totals['regressions']} regression(s) and "
+            f"{graded_totals['improvements']} improvement(s) across {graded_totals['graded']} graded comparison(s). "
+            + (
+                "Statistically significant accuracy loss: " + ", ".join(significant) + "."
+                if significant
+                else "No statistically significant accuracy loss (exact McNemar, p < 0.05)."
+            )
+        )
+    else:
+        verdict = (
+            f"{total_failures} of {total_tests} output(s) differ substantially in text (similarity < 50%) across "
+            f"{backend_count} backend(s) and {quant_count} quantization level(s). Text differences alone don't "
+            f"mean wrong answers; use a suite with answer keys (e.g. gsm8k) to measure correctness."
+        )
 
     # ── Section data ───────────────────────────────────────────────────────
     sweep_ctx = _build_sweep_context(sweeps)
+    sweep_levels = _build_sweep_levels(sweeps)
     compare_runs = _build_compare_context(compare_results)
     diff_rows = _build_diff_context(diff_batches + [c.comparisons for c in compare_results])
     failure_cards = _build_failure_cards(diff_batches + [c.comparisons for c in compare_results])
@@ -1057,6 +1302,8 @@ def generate_report(results_dir: Path, output_path: Path) -> Path:
         backend_count=backend_count,
         quant_count=quant_count,
         verdict=verdict,
+        graded_totals=graded_totals,
+        sweep_levels=sweep_levels,
         sweep_rows=sweep_ctx["sweep_rows"],
         quant_cols=sweep_ctx["quant_cols"],
         degradation_cliff=sweep_ctx["degradation_cliff"],

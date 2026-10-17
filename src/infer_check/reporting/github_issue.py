@@ -68,8 +68,8 @@ def format_issue(comparison: ComparisonResult, include_repro: bool = True) -> st
     test_text = (test.text[:500] + "…") if len(test.text) > 500 else test.text
 
     # Baseline token at divergence point (if available).
-    baseline_token_line = ""
-    test_token_line = ""
+    baseline_token_line = ""  # nosec B105 - not a password; bandit flags *_token names
+    test_token_line = ""  # nosec B105
     if comparison.token_divergence_index is not None:
         idx = comparison.token_divergence_index
         if idx < len(baseline.tokens):

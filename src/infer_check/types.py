@@ -1,11 +1,16 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+import numpy as np
+import numpy.typing as npt
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
+    "AnswerType",
     "Prompt",
     "InferenceResult",
     "ComparisonResult",
@@ -13,6 +18,7 @@ __all__ = [
     "StressResult",
     "DeterminismResult",
     "CompareResult",
+    "TokenScores",
 ]
 
 
@@ -44,20 +50,73 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+AnswerType = Literal["integer", "decimal", "boolean", "choice", "free"]
+
+
 class Prompt(BaseInferModel):
     id: str = Field(default_factory=_generate_uuid)
     text: str
     category: str = "general"
     max_tokens: int = 1024
+    # How to grade the response against ``expected``. "free" prompts have no
+    # answer key: they contribute KL/similarity but not correctness metrics.
+    answer_type: AnswerType = "free"
+    expected: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_answer_key(self) -> Self:
+        if self.answer_type == "free":
+            if self.expected is not None:
+                raise ValueError(f"prompt '{self.id}': 'expected' given but answer_type is 'free'")
+            return self
+        if not self.expected:
+            raise ValueError(f"prompt '{self.id}': answer_type '{self.answer_type}' requires 'expected'")
+        key = self.expected.strip()
+        if self.answer_type in ("integer", "decimal"):
+            try:
+                value = Decimal(key)
+            except InvalidOperation:
+                raise ValueError(f"prompt '{self.id}': expected {key!r} is not a number") from None
+            if not value.is_finite():
+                raise ValueError(f"prompt '{self.id}': expected must be finite")
+            if self.answer_type == "integer" and value != value.to_integral_value():
+                raise ValueError(f"prompt '{self.id}': expected {key!r} is not an integer")
+        elif self.answer_type == "boolean" and key.lower() not in {"yes", "no", "true", "false"}:
+            raise ValueError(f"prompt '{self.id}': boolean expected must be yes/no/true/false, got {key!r}")
+        elif self.answer_type == "choice" and not (len(key) == 1 and key.isascii() and key.isalnum()):
+            # The grader only matches [A-Za-z0-9]; reject keys it could never match.
+            raise ValueError(
+                f"prompt '{self.id}': choice expected must be a single letter or digit (A-Z, a-z, 0-9), got {key!r}"
+            )
+        # Store the canonical key so every grader sees the same value it was validated as.
+        self.expected = key
+        return self
+
+    @property
+    def is_graded(self) -> bool:
+        return self.answer_type != "free"
 
 
 class InferenceResult(BaseInferModel):
+    """One generation from one backend.
+
+    ``metadata`` conventions (set by every backend where the server exposes them):
+      - ``finish_reason``: ``"stop"`` (end-of-message / stop sequence),
+        ``"length"`` (hit max_tokens), another server-specific string, or ``None``
+        if unknown.
+      - ``prompt_tokens``: number of prompt tokens after chat templating, or ``None``.
+    """
+
     prompt_id: str
     backend_name: str
     model_id: str
     quantization: str | None = None
     tokens: list[str]
+    # Token IDs, when the backend exposes them. Prefer these over ``tokens`` for
+    # comparisons: ``tokens`` are per-token display strings and can split
+    # multi-byte characters.
+    token_ids: list[int] | None = None
     logprobs: list[float] | None = None
     distributions: list[list[float]] | None = None
     distribution_metadata: list[dict[str, int | str]] | None = None
@@ -71,7 +130,21 @@ class InferenceResult(BaseInferModel):
 class ComparisonResult(BaseInferModel):
     baseline: InferenceResult
     test: InferenceResult
+    # Mean per-token KL(baseline || test), in nats. How it was computed is in
+    # ``kl_method``; values from different methods must not be averaged together.
     kl_divergence: float | None = None
+    # "teacher_forced": both models scored the baseline's exact token sequence, so
+    #   every position compares distributions over the same context.
+    # "prefix": approximate fallback for backends that can't score; uses only the
+    #   positions up to and including the first divergent token, where both
+    #   generations still share a context.
+    kl_method: Literal["teacher_forced", "prefix"] | None = None
+    kl_max: float | None = None
+    kl_p99: float | None = None
+    kl_positions: int | None = None
+    kl_per_token: list[float] | None = None
+    # Fraction of positions where both models' most likely next token is the same.
+    top1_agreement: float | None = None
     token_divergence_index: int | None = None
     text_similarity: float
     is_failure: bool
@@ -89,12 +162,27 @@ class SweepResult(BaseInferModel):
 
 
 class StressResult(BaseInferModel):
+    """One concurrency level of a stress test.
+
+    At level 1 every prompt runs alone; that is the reference. At level N each
+    prompt (the target) is sent together with N-1 other prompts and its output
+    compared with its solo run. ``results`` holds the target outputs only.
+    """
+
     model_id: str
     backend_name: str
     concurrency_level: int
     results: list[InferenceResult]
     error_count: int
+    # Fraction of compared targets whose output was identical to their solo run.
     output_consistency: float
+    trials: int = 1
+    compared: int = 0
+    # One entry per diverged target: prompt_id, trial, first_divergence (token
+    # index), and co_scheduled (IDs of the prompts it was sent with).
+    divergences: list[dict[str, Any]] = Field(default_factory=list)
+    # Distinct error messages (up to 10) behind ``error_count``.
+    error_messages: list[str] = Field(default_factory=list)
 
 
 class DeterminismResult(BaseInferModel):
@@ -116,9 +204,33 @@ class CompareResult(BaseInferModel):
     backend_a: str
     backend_b: str
     comparisons: list[ComparisonResult]
-    flip_rate: float  # fraction of prompts where the "answer" changed
+    flip_rate: float  # fraction of flip-eligible prompts where the answer changed
+    # Paired correctness against answer keys (see analysis.scoring.paired_correctness);
+    # None when no prompt in the suite has an answer key.
+    correctness: dict[str, Any] | None = None
     mean_kl_divergence: float | None = None
+    kl_method: Literal["teacher_forced", "prefix"] | None = None
+    mean_top1_agreement: float | None = None
     mean_text_similarity: float | None = None
     per_category_stats: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TokenScores:
+    """Teacher-forced next-token log-probs for a fixed target token sequence.
+
+    Row ``i`` describes the distribution that predicts ``target_ids[i]`` given
+    the prompt and ``target_ids[:i]``. All log-probs are normalised over the
+    model's full vocabulary. In-memory only (holds numpy arrays; not serialised).
+    """
+
+    top_ids: npt.NDArray[np.int64]  # [T, K] token IDs, by descending log-prob
+    top_logprobs: npt.NDArray[np.float32]  # [T, K]
+    argmax: npt.NDArray[np.int64]  # [T] most likely token at each position
+    # [T, M] log-probs at caller-requested token IDs (``at_ids`` passed to score()).
+    at_logprobs: npt.NDArray[np.float32] | None = None
+
+    def __len__(self) -> int:
+        return int(self.argmax.shape[0])

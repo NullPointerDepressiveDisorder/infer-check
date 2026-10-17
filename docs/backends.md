@@ -19,8 +19,8 @@ In-process inference using Apple's MLX framework. Runs directly on Apple Silicon
 
 **Features**:
 
-- Generates per-token logprobs when available via `generate_step()`
-- Falls back to simple generation if logprobs aren't supported
+- Generates via `stream_generate()`, recording per-token logprobs and top-K distributions
+- Supports teacher-forced scoring (`score()`), which enables exact-context KL against another mlx-lm model
 - Lazy model loading -- the model is downloaded and loaded on first use, not at import time
 - Single-threaded sequential inference
 
