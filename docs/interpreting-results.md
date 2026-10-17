@@ -19,7 +19,7 @@ Text similarity is computed using `difflib.SequenceMatcher`, which measures the 
 
 Prompts can carry an answer key: an `answer_type` (`integer`, `decimal`, `boolean` or `choice`) and an `expected` value. For these prompts, infer-check grades each response against the key rather than comparing two outputs to each other. This is the most direct measure of whether a quantization or backend broke something.
 
-The prompt sent to the model gets a fixed instruction appended: work step by step, then end with `Final answer: <answer>`. The grader reads the last `Final answer:` line, or the last `\boxed{...}` if there isn't one. Numbers may be written with commas, as `1.5e9`, `1.5 × 10^9`, `10^9`, or as a fraction `a/b`. Integers must match exactly; decimals within a relative tolerance of 10⁻⁶.
+The prompt sent to the model gets a fixed instruction appended: work step by step, then end with `Final answer: <answer>`. The grader reads the last `Final answer:` line, or the last `\boxed{...}` if there isn't one. Numbers may be written with commas, as `1.5e9`, `1.5 × 10^9`, `10^9`, or as a fraction `a/b`. Integers must match exactly, and are compared without any rounding: fractions are exact rationals, and `1.5 × 10^9`-style numbers are built straight from their digits. Decimals must be within a relative tolerance of 10⁻⁶ of the key; a key of 0 requires exactly 0.
 
 Each response gets one of four grades:
 

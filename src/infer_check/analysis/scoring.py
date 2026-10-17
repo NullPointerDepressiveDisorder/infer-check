@@ -21,6 +21,7 @@ import math
 import re
 from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 from math import comb
 from typing import Any, Literal
 
@@ -101,6 +102,10 @@ def final_answer(text: str) -> str | None:
     return None
 
 
+Number = Decimal | Fraction
+# Relative tolerance for ``decimal`` answers.
+DECIMAL_REL_TOL = Decimal("1e-6")
+
 # Default contexts overflow past 1e999999; model output like "10^369693099" is legal.
 _Wide = decimal.Context(prec=50, Emax=decimal.MAX_EMAX, Emin=decimal.MIN_EMIN)
 
@@ -128,30 +133,36 @@ def _normalize_latex_fractions(s: str) -> tuple[str, list[int]]:
     return "".join(out), failed
 
 
-def parse_number(ans: str) -> Decimal | None:
+def parse_number(ans: str) -> Number | None:
     """Parse the first number in ``ans``: plain, comma-grouped, ``1.5e9``,
-    ``1.5 × 10^9``, ``10^9``, or a fraction ``a/b``. None if there isn't one."""
+    ``1.5 × 10^9``, ``10^9``, or a fraction ``a/b``. None if there isn't one.
+
+    Values are exact: decimals are built straight from their digits (a
+    ``Decimal`` from a string is never rounded, whatever its exponent), and
+    fractions are exact ``Fraction``s. No fixed precision means no boundary
+    past which grading silently rounds: ``(10^50 + 1)/1`` stays 10^50 + 1.
+    """
     s = ans.replace("\u2212", "-").replace("\u00a0", " ").replace("$", "")
     s, failed = _normalize_latex_fractions(s)
-    candidates: list[tuple[int, int, Decimal]] = []  # (start, -length, value)
+    candidates: list[tuple[int, int, Number]] = []  # (start, -length, value)
 
     with decimal.localcontext(_Wide):
         for m in _SCI.finditer(s):
             try:
-                candidates.append((m.start(), -len(m.group(0)), Decimal(m.group(1)) * Decimal(10) ** int(m.group(2))))
-            except (ArithmeticError, ValueError):  # >4300-digit exponents overflow Decimal; treat as unparseable.
+                # "m × 10^e" is exactly the decimal string "me": no multiplication, no rounding.
+                candidates.append((m.start(), -len(m.group(0)), Decimal(f"{m.group(1)}e{int(m.group(2))}")))
+            except (ArithmeticError, ValueError):  # exponent beyond Decimal's range, or >4300 digits
                 failed.append(m.start())
         for m in _POW10.finditer(s):
             try:
-                sign = Decimal(-1) if m.group(1) else Decimal(1)
-                candidates.append((m.start(), -len(m.group(0)), sign * Decimal(10) ** int(m.group(2))))
+                candidates.append((m.start(), -len(m.group(0)), Decimal(f"{m.group(1)}1e{int(m.group(2))}")))
             except (ArithmeticError, ValueError):
                 failed.append(m.start())
         for m in _FRAC.finditer(s):
             try:
-                num = Decimal(m.group(1).replace(",", ""))
-                den = Decimal(m.group(2).replace(",", ""))
-                candidates.append((m.start(), -len(m.group(0)), num / den))  # x/0 and 0/0 raise
+                num = Fraction(Decimal(m.group(1).replace(",", "")))
+                den = Fraction(Decimal(m.group(2).replace(",", "")))
+                candidates.append((m.start(), -len(m.group(0)), num / den))  # exact; x/0 raises
             except (ArithmeticError, ValueError):
                 failed.append(m.start())
     plain = _NUM.search(s)
@@ -167,6 +178,24 @@ def parse_number(ans: str) -> Decimal | None:
     if any(start <= best[0] for start in failed):
         return None
     return best[2]
+
+
+def _within_relative_tolerance(got: Number, exp: Decimal) -> bool:
+    """``|got - exp| <= 1e-6 * |exp|``. A key of 0 requires exactly 0.
+
+    Purely relative: an absolute floor would let ``0`` pass for a key of
+    ``1e-9``, a 100% error.
+    """
+    if exp == 0:
+        return got == 0
+    if isinstance(got, Fraction):
+        key = Fraction(exp)
+        return abs(got - key) <= Fraction(DECIMAL_REL_TOL) * abs(key)
+    with decimal.localcontext(_Wide):
+        try:
+            return abs(got - exp) <= DECIMAL_REL_TOL * abs(exp)
+        except ArithmeticError:
+            return False  # a value beyond even the wide range can't be within tolerance of a key
 
 
 def is_correct(text: str, expected: str, answer_type: AnswerType) -> bool | None:
@@ -185,13 +214,9 @@ def is_correct(text: str, expected: str, answer_type: AnswerType) -> bool | None
             exp = Decimal(expected)
         except InvalidOperation as exc:
             raise ValueError(f"answer key {expected!r} is not a number") from exc
-        with decimal.localcontext(_Wide):
-            try:
-                if answer_type == "integer":
-                    return got == exp
-                return abs(got - exp) <= Decimal("1e-6") * max(Decimal(1), abs(exp))
-            except ArithmeticError:
-                return False  # a value beyond even the wide range can't equal a sane key
+        if answer_type == "integer":
+            return got == exp  # exact: Decimal and Fraction compare without rounding
+        return _within_relative_tolerance(got, exp)
     if answer_type == "boolean":
         m = _BOOL.search(ans)
         if not m:

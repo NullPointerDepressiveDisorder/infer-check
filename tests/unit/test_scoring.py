@@ -1,6 +1,7 @@
 """Answer-key scoring: parsing, grading, paired statistics."""
 
 from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 from pydantic import ValidationError
@@ -279,9 +280,8 @@ def test_ordinary_fractions_still_parse() -> None:
     assert parse_number("-1/8") == Decimal("-0.125")
     assert parse_number("3/4 of the cake") == Decimal("0.75")
     assert parse_number("6/3") == Decimal(2)  # whole-number fractions are exact
-    # Repeating decimals: precision-independent check (fractions use the widened context).
-    got = parse_number("1627/2520")
-    assert got is not None and abs(got - Decimal(1627) / Decimal(2520)) < Decimal("1e-25")
+    # Repeating decimals are kept as exact rationals.
+    assert parse_number("1627/2520") == Fraction(1627, 2520)
 
 
 # ── leading-dot decimals ────────────────────────────────────────────
@@ -350,3 +350,52 @@ def test_slash_followed_by_a_word_is_not_a_fraction() -> None:
 )
 def test_fraction_grading_regressions(text: str, expected: str, answer_type: str, result: bool) -> None:
     assert is_correct(text, expected, answer_type) is result  # type: ignore[arg-type]
+
+
+# ── decimal tolerance is relative, not absolute ─────────────────────
+
+
+@pytest.mark.parametrize(
+    ("text", "expected", "result"),
+    [
+        ("Final answer: 0", "1e-9", False),  # was True: a 100% error inside an absolute 1e-6 window
+        ("Final answer: 1.0000005e-9", "1e-9", True),  # within 1e-6 relative
+        ("Final answer: 1.00001e-9", "1e-9", False),
+        ("Final answer: -0.1250001", "-0.125", True),
+        ("Final answer: -0.1251", "-0.125", False),
+        ("Final answer: 0", "0", True),
+        ("Final answer: 0.0", "0", True),
+        ("Final answer: 0.000001", "0", False),  # a zero key needs an exact zero
+        ("Final answer: 1/3", "0.3333333", True),  # exact rational against a decimal key
+        ("Final answer: 1/3", "0.3333", False),
+    ],
+)
+def test_decimal_tolerance_is_relative(text: str, expected: str, result: bool) -> None:
+    assert is_correct(text, expected, "decimal") is result
+
+
+# ── integer grading is exact: no fixed precision to round at ────────
+
+BIG = 10**50 + 1  # 51 digits: one more than the old 50-digit working precision
+
+
+@pytest.mark.parametrize(
+    ("ans", "key", "result"),
+    [
+        (f"{BIG}/1", str(BIG), True),  # was False: rounded to 10^50
+        (f"{BIG}/1", str(10**50), False),  # was True
+        (f"{BIG} × 10^0", str(BIG), True),  # scientific notation no longer multiplies and rounds
+        (f"{BIG} × 10^0", str(10**50), False),
+        (f"{BIG}/{10**50}", "1", False),  # not an integer; was rounded to exactly 1
+        (f"{2 * BIG}/2", str(BIG), True),  # exact rational reduces to the integer
+        (f"{BIG}e0", str(BIG), True),
+    ],
+)
+def test_integer_grading_is_exact(ans: str, key: str, result: bool) -> None:
+    assert is_correct(f"Final answer: {ans}", key, "integer") is result
+
+
+def test_parsed_values_are_exact() -> None:
+    assert parse_number(f"{BIG}/{10**50}") == Fraction(BIG, 10**50)
+    assert parse_number(f"{BIG} × 10^2") == Decimal(BIG * 100)
+    assert parse_number("1e369693099") == Decimal("1E+369693099")  # still no huge-int materialisation
