@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: 'true'
           activate-environment: "true"
@@ -26,13 +26,16 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Run tests with coverage
-        run: uv run pytest --cov --junitxml=junit.xml -o junit_family=legacy
+        run: >-
+          uv run pytest --cov=src/infer_check
+          --cov-report=term-missing --cov-report=xml:coverage.xml
+          --junitxml=junit.xml -o junit_family=legacy
 
       - name: Run Mypy
         run: uv run mypy src --cobertura-xml-report mypy_report
 
       - name: Upload mypy coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7.1.1
         if: "!cancelled()"
         with:
           files: ./mypy_report/cobertura.xml
@@ -43,9 +46,10 @@ jobs:
 
       - name: Upload pytest cov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7.1.1
         with:
-          files: ./junit.xml
+          files: ./coverage.xml
+          disable_search: true
           flags: pytest
           slug: ${{ github.repository }}
           fail_ci_if_error: 'true'
@@ -53,7 +57,7 @@ jobs:
 
       - name: Upload test results
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7.1.1
         with:
           files: ./junit.xml
           report_type: test_results
