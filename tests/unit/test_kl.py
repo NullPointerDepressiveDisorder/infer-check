@@ -65,6 +65,27 @@ def test_teacher_forced_stats_stay_finite_with_masked_tokens() -> None:
     assert stats is not None and stats.mean == 0.0 and np.isfinite(stats.per_token).all()
 
 
+def test_rounding_overshoot_in_q_tail_stays_finite() -> None:
+    # Real float32 top-K sums overshoot 1 by ~1e-6. That must not read as an empty
+    # Q tail: treating it as zero made KL infinite on ordinary bf16-vs-4-bit runs.
+    p = np.array([[0.6, 0.399995]])  # tail 5e-6
+    q = np.array([[0.6, 0.400002]])  # sums to 1.000002
+    out = binned_kl(np.log(p), np.log(q))[0]
+    assert np.isfinite(out) and out < 1e-3
+
+
+def test_empty_q_tail_under_real_p_mass_is_a_large_lower_bound() -> None:
+    # P=0.5 on the selected token, Q=1: the true KL is infinite. The floored tail
+    # reports a large finite value, still a valid lower bound.
+    out = binned_kl(np.log([[0.5]]), np.log([[1.0]]))[0]
+    assert 10 < out < np.inf
+
+
+def test_p_tail_at_or_below_zero_contributes_nothing() -> None:
+    lp = np.log([[0.6, 0.400001]])  # P sums to 1.000001
+    assert binned_kl(lp, lp)[0] == 0.0
+
+
 def test_shape_mismatch_raises() -> None:
     with pytest.raises(ValueError):
         binned_kl(np.zeros((2, 3)), np.zeros((2, 4)))

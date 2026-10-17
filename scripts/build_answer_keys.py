@@ -7,7 +7,12 @@ Usage:
 Every key is computed here in Python, never typed in by hand. Only prompts
 with a single, unambiguous answer are keyed: multi-part questions ("Compute X.
 Is it Y?") and convention-dependent ones (0^0, (-3) mod 5, IEEE edge cases)
-stay free-form, because "Final answer: <x>" can't capture them.
+stay free-form, because "Final answer: <x>" can't capture them. Representation
+answers (bit strings like 0b10000000) aren't keyed either: the numeric grader
+would read them as decimal numbers.
+
+This script is authoritative: prompts it doesn't list have any answer key
+removed, so dropping an entry here un-keys the prompt.
 """
 
 from __future__ import annotations
@@ -95,7 +100,6 @@ NUMERICS: dict[str, Key] = {
     "numerics-067": ("integer", lambda: math.comb(15, 5)),
     "numerics-068": ("integer", lambda: nth_prime(100)),
     "numerics-069": ("integer", lambda: (255 << 24) | (255 << 16) | (255 << 8) | 0),
-    "numerics-075": ("integer", lambda: int(format(-128 & 0xFF, "08b"))),  # bit string "10000000"
     "numerics-076": ("integer", lambda: 999**3),
     "numerics-083": ("integer", lambda: 10**7 * 10**8),
     "numerics-084": ("integer", lambda: 12345679 * 63),
@@ -134,6 +138,12 @@ def main() -> int:
 
         for row in rows:
             if row["id"] not in keys:
+                if "answer_type" in row or "expected" in row:  # stale key from an older list
+                    mismatches += 1
+                    if args.check:
+                        print(f"{filename} {row['id']}: has an answer key but isn't listed here")
+                    row.pop("answer_type", None)
+                    row.pop("expected", None)
                 continue
             answer_type, compute = keys[row["id"]]
             expected = render(compute())

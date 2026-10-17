@@ -84,6 +84,15 @@ def binned_kl(p_lp: npt.ArrayLike, q_lp: npt.ArrayLike) -> npt.NDArray[np.float6
     terms[positive] = p[positive] * (p_log[positive] - q_log[positive])
     kl = np.sum(terms, axis=-1)
 
+    # Tails are computed as 1 - sum(top-K), and float32 log-probs make those sums
+    # overshoot 1 by up to ~2e-6 (measured: Qwen2.5-0.5B bf16 vs 4-bit, 1310
+    # positions, 103 with a computed Q tail <= 0). A computed tail of ~0 is
+    # therefore indistinguishable from rounding, unlike an explicit -inf
+    # log-prob, which is an exact zero. So Q's tail is floored rather than
+    # treated as zero (treating it as zero made KL infinite on ordinary runs).
+    # Flooring Q upward can only shrink KL, so the result stays a lower bound;
+    # a genuinely empty Q tail under real P mass still reports a large value
+    # (~p_rest * 27.6 nats). P tails at or below zero contribute nothing.
     p_rest = np.clip(1.0 - p.sum(axis=-1), 0.0, 1.0)
     q_rest = np.clip(1.0 - q.sum(axis=-1), 1e-12, 1.0)
     tail = np.where(p_rest > 0, p_rest * (np.log(np.maximum(p_rest, 1e-12)) - np.log(q_rest)), 0.0)

@@ -21,7 +21,6 @@ import math
 import re
 from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
-from fractions import Fraction
 from math import comb
 from typing import Any, Literal
 
@@ -79,7 +78,12 @@ _SCI = re.compile(
     r"\s*(?:[x×*·]|\\times|\\cdot)\s*10\s*(?:\^|\*\*)\s*\{?\s*([-+]?\d+)\s*\}?"  # × 10^exponent
 )
 _POW10 = re.compile(r"(?<![\d.])(-?)10\s*(?:\^|\*\*)\s*\{?\s*([-+]?\d+)\s*\}?")
-_FRAC = re.compile(r"(?<![\d.])(-?\d+)\s*/\s*(\d+)(?![\d.])")
+_OPERAND = r"-?(?:\d[\d,]*(?:\.\d+)?|\.\d+)"
+# a/b with signed, comma-grouped or decimal operands ("1,000/2", "1/-2", "1.5/3"). The
+# lookarounds stop it starting mid-number ("1,000/2" must not match "000/2").
+_FRAC = re.compile(rf"(?<![\w.,])({_OPERAND})\s*/\s*({_OPERAND})(?!\w|\.\d)")
+_LATEX_FRAC = re.compile(r"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+_NUMBER_ONLY = re.compile(rf"\s*{_OPERAND}\s*")
 _NUM = re.compile(r"-?(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
 _BOOL = re.compile(r"\b(yes|no|true|false)\b", re.IGNORECASE)
 _CHOICE = re.compile(r"\(?\b([A-Za-z0-9])\b\)?")
@@ -101,12 +105,35 @@ def final_answer(text: str) -> str | None:
 _Wide = decimal.Context(prec=50, Emax=decimal.MAX_EMAX, Emin=decimal.MIN_EMIN)
 
 
+def _normalize_latex_fractions(s: str) -> tuple[str, list[int]]:
+    """Rewrite numeric ``\\frac{a}{b}`` as ``a/b``.
+
+    Non-numeric fractions (``\\frac{\\pi}{2}``) can't be evaluated: they become a
+    marker no pattern matches, and their position is returned so the number
+    inside them ("2") is never taken as the answer.
+    """
+    out: list[str] = []
+    failed: list[int] = []
+    last = 0
+    for m in _LATEX_FRAC.finditer(s):
+        out.append(s[last : m.start()])
+        num, den = m.group(1).strip(), m.group(2).strip()
+        if _NUMBER_ONLY.fullmatch(num) and _NUMBER_ONLY.fullmatch(den):
+            out.append(f"{num}/{den}")
+        else:
+            failed.append(sum(len(part) for part in out))
+            out.append("\x00")
+        last = m.end()
+    out.append(s[last:])
+    return "".join(out), failed
+
+
 def parse_number(ans: str) -> Decimal | None:
     """Parse the first number in ``ans``: plain, comma-grouped, ``1.5e9``,
     ``1.5 × 10^9``, ``10^9``, or a fraction ``a/b``. None if there isn't one."""
     s = ans.replace("\u2212", "-").replace("\u00a0", " ").replace("$", "")
+    s, failed = _normalize_latex_fractions(s)
     candidates: list[tuple[int, int, Decimal]] = []  # (start, -length, value)
-    failed: list[int] = []
 
     with decimal.localcontext(_Wide):
         for m in _SCI.finditer(s):
@@ -122,9 +149,10 @@ def parse_number(ans: str) -> Decimal | None:
                 failed.append(m.start())
         for m in _FRAC.finditer(s):
             try:
-                f = Fraction(int(m.group(1)), int(m.group(2)))  # ZeroDivisionError on x/0
-                candidates.append((m.start(), -len(m.group(0)), Decimal(f.numerator) / Decimal(f.denominator)))
-            except (ArithmeticError, ValueError):  # x/0, or a part longer than 4300 digits
+                num = Decimal(m.group(1).replace(",", ""))
+                den = Decimal(m.group(2).replace(",", ""))
+                candidates.append((m.start(), -len(m.group(0)), num / den))  # x/0 and 0/0 raise
+            except (ArithmeticError, ValueError):
                 failed.append(m.start())
     plain = _NUM.search(s)
     if plain:
@@ -134,8 +162,8 @@ def parse_number(ans: str) -> Decimal | None:
     if not candidates:
         return None
     best = min(candidates, key=lambda c: (c[0], c[1]))
-    # Never fall back to the leading digits of a form we failed to evaluate
-    # (the "10" of "10^<huge>", the "1" of "1/0").
+    # Never fall back to the digits inside a form we failed to evaluate
+    # (the "10" of "10^<huge>", the "1" of "1/0", the "2" of "\\frac{\\pi}{2}").
     if any(start <= best[0] for start in failed):
         return None
     return best[2]

@@ -269,8 +269,10 @@ def test_zero_denominator_is_unparsed_not_its_numerator() -> None:
 
 
 @pytest.mark.parametrize("ans", ["9" * 5000 + "/7", "7/" + "9" * 5000])
-def test_oversized_fraction_is_unparsed_not_an_error(ans: str) -> None:
-    assert parse_number(ans) is None
+def test_oversized_fraction_evaluates_without_error(ans: str) -> None:
+    # Operands are parsed as Decimals, which have no 4300-digit limit.
+    assert parse_number(ans) is not None
+    assert is_correct(f"Final answer: {ans}", "2", "decimal") is False
 
 
 def test_ordinary_fractions_still_parse() -> None:
@@ -305,3 +307,46 @@ def test_boolean_key_whitespace_is_ignored() -> None:
     assert is_correct("Final answer: yes", " yes ", "boolean") is True
     p = Prompt(text="x", answer_type="boolean", expected=" yes ")
     assert p.expected == "yes"  # stored canonically
+
+
+# ── fraction forms: LaTeX, signed and comma-grouped operands ────────
+
+
+@pytest.mark.parametrize(
+    ("ans", "value"),
+    [
+        ("\\frac{1}{2}", "0.5"),
+        ("-\\frac{3}{4}", "-0.75"),
+        ("\\dfrac{10}{4}", "2.5"),
+        ("\\frac{-1}{2}", "-0.5"),
+        ("1/-2", "-0.5"),
+        ("1,000/2", "500"),
+        ("1.5/3", "0.5"),
+        ("-1/8", "-0.125"),
+    ],
+)
+def test_fraction_forms(ans: str, value: str) -> None:
+    assert parse_number(ans) == Decimal(value)
+
+
+def test_unevaluable_latex_fraction_is_unparsed_not_its_inner_number() -> None:
+    assert parse_number("\\frac{\\pi}{2}") is None
+
+
+def test_slash_followed_by_a_word_is_not_a_fraction() -> None:
+    assert parse_number("$1,000/month") == Decimal(1000)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected", "answer_type", "result"),
+    [
+        ("\\boxed{\\frac{1}{2}}", "1", "integer", False),  # was a false positive: parsed as 1
+        ("\\boxed{\\frac{1}{2}}", "0.5", "decimal", True),  # was a false negative
+        ("Final answer: 1/-2", "1", "integer", False),  # was parsed as 1
+        ("Final answer: 1/-2", "-0.5", "decimal", True),
+        ("Final answer: 1,000/2", "500", "integer", True),  # was parsed as 1000
+        ("Final answer: 1,000/2", "1000", "integer", False),
+    ],
+)
+def test_fraction_grading_regressions(text: str, expected: str, answer_type: str, result: bool) -> None:
+    assert is_correct(text, expected, answer_type) is result  # type: ignore[arg-type]

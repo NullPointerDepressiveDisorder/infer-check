@@ -81,3 +81,23 @@ def test_gsm8k_is_fully_keyed() -> None:
     prompts = load_suite(get_suite_path("gsm8k"))
     assert len(prompts) == 1319
     assert all(p.is_graded and p.answer_type == "integer" for p in prompts)
+
+
+def test_keyed_numerics_prompts_ask_a_single_question() -> None:
+    """A keyed prompt must ask only for the graded quantity.
+
+    "Compute X. How many digits does it have?" invites a final answer of X, which
+    the grader then compares against the digit count.
+    """
+    import re
+
+    compound = re.compile(r"^(Compute|What is)\b[^?]*[.?]\s+\S.*\?$")
+    for p in load_suite(get_suite_path("adversarial-numerics")):
+        if p.is_graded:
+            assert p.text.count("?") <= 1 and not compound.match(p.text), f"{p.id}: {p.text!r}"
+
+
+def test_bit_string_prompt_is_not_keyed() -> None:
+    # "0b10000000" would be read as the decimal number 0 by the numeric grader.
+    prompts = {p.id: p for p in load_suite(get_suite_path("adversarial-numerics"))}
+    assert not prompts["numerics-075"].is_graded

@@ -37,6 +37,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -50,11 +51,20 @@ from infer_check.runner import TestRunner
 from infer_check.suites.loader import load_suite
 
 
+def quant_cache_dir(models_dir: Path, base_repo: str, bits: int) -> Path:
+    """Cache location for a local ``bits``-bit conversion of ``base_repo``.
+
+    Uses the full repo ID (or path), not just its last component: org-a/model and
+    org-b/model must not share a cache entry.
+    """
+    return models_dir / f"{re.sub(r'[^A-Za-z0-9._-]+', '--', base_repo.strip('/'))}-{bits}bit"
+
+
 def local_quant(base_repo: str, bits: int, models_dir: Path) -> str:
     """Path to a locally converted ``bits``-bit model, building it if needed."""
     from mlx_lm import convert
 
-    out = models_dir / f"{base_repo.split('/')[-1]}-{bits}bit"
+    out = quant_cache_dir(models_dir, base_repo, bits)
     if not (out / "config.json").exists():
         print(f"building {bits}-bit model at {out} ...", flush=True)
         convert(base_repo, mlx_path=str(out), quantize=True, q_bits=bits)

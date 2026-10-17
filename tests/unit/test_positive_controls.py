@@ -70,3 +70,12 @@ def test_all_truncated_table_renders_and_fails_clearly(pc: ModuleType, capsys: p
     assert "N/A -> N/A" in row
     assert pc.check_detects_damage("2bit", table) is False
     assert "no gradable pairs" in capsys.readouterr().out
+
+
+def test_quant_cache_dir_includes_the_repo_owner(pc: ModuleType, tmp_path: Path) -> None:
+    a = pc.quant_cache_dir(tmp_path, "org-a/model-bf16", 3)
+    b = pc.quant_cache_dir(tmp_path, "org-b/model-bf16", 3)
+    assert a != b
+    assert a.name == "org-a--model-bf16-3bit"
+    assert pc.quant_cache_dir(tmp_path, "org-a/model-bf16", 2) != a
+    assert pc.quant_cache_dir(tmp_path, "/Users/x/models/m", 3).name == "Users--x--models--m-3bit"
