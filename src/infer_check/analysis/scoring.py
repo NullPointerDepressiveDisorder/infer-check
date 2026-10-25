@@ -87,6 +87,9 @@ _LATEX_FRAC = re.compile(r"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
 _NUMBER_ONLY = re.compile(rf"\s*{_OPERAND}\s*")
 _NUM = re.compile(r"-?(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
 _BOOL = re.compile(r"\b(yes|no|true|false)\b", re.IGNORECASE)
+# A negation within the two words before the boolean keyword ("not true",
+# "isn't really false", "never yes"): the keyword's literal meaning is reversed.
+_NEGATED = re.compile(r"(?:\bnot|\bnever|n't)\W+(?:\w+\W+){0,2}$", re.IGNORECASE)
 _CHOICE = re.compile(r"\(?\b([A-Za-z0-9])\b\)?")
 
 
@@ -220,6 +223,10 @@ def is_correct(text: str, expected: str, answer_type: AnswerType) -> bool | None
     if answer_type == "boolean":
         m = _BOOL.search(ans)
         if not m:
+            return None
+        if _NEGATED.search(ans[: m.start()]):
+            # "not true" / "not false": reading the keyword literally reverses the
+            # answer, and inverting it guesses at intent. Treat as unparsed.
             return None
         norm = {"yes": "yes", "true": "yes", "no": "no", "false": "no"}
         key = expected.strip().lower()

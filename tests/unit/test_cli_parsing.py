@@ -35,7 +35,16 @@ def test_sweep_model_parsing_robustness(tmp_path: Path) -> None:
         runner = CliRunner()
         # Using a subset of arguments to trigger the parsing logic
         result = runner.invoke(
-            main, ["sweep", "--models", "bf16==bartowski/Qwen,4bit=bartowski/Qwen", "--prompts", "reasoning"]
+            main,
+            [
+                "sweep",
+                "--models",
+                "bf16==bartowski/Qwen,4bit=bartowski/Qwen",
+                "--prompts",
+                "reasoning",
+                "--output",
+                str(tmp_path / "out"),
+            ],
         )
         assert result.exit_code == 0, result.output
 

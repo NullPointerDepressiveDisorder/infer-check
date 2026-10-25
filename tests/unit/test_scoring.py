@@ -399,3 +399,34 @@ def test_parsed_values_are_exact() -> None:
     assert parse_number(f"{BIG}/{10**50}") == Fraction(BIG, 10**50)
     assert parse_number(f"{BIG} × 10^2") == Decimal(BIG * 100)
     assert parse_number("1e369693099") == Decimal("1E+369693099")  # still no huge-int materialisation
+
+
+# ── negated boolean answers ─────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Final answer: not true", "yes"),  # was graded correct
+        ("Final answer: not false", "no"),  # was graded correct
+        ("Final answer: Not True", "no"),  # unparsed, not inverted
+        ("Final answer: isn't true", "yes"),
+        ("Final answer: it is not really true", "yes"),
+        ("Final answer: never yes", "yes"),
+    ],
+)
+def test_negated_boolean_is_unparsed(text: str, expected: str) -> None:
+    assert is_correct(text, expected, "boolean") is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected", "result"),
+    [
+        ("Final answer: No, it is not prime", "no", True),  # negation *after* the keyword is fine
+        ("Final answer: Yes, it's not composite", "yes", True),
+        ("Final answer: No", "yes", False),
+        ("Final answer: true", "yes", True),
+    ],
+)
+def test_plain_boolean_answers_still_grade(text: str, expected: str, result: bool) -> None:
+    assert is_correct(text, expected, "boolean") is result

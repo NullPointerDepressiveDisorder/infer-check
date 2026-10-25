@@ -36,7 +36,18 @@ def test_max_tokens_prompt_precedence(tmp_path: Path) -> None:
     ):
         # Run with global --max-tokens 512
         result = runner.invoke(
-            main, ["--max-tokens", "512", "sweep", "--models", "a=m1,b=m2", "--prompts", str(prompt_path)]
+            main,
+            [
+                "--max-tokens",
+                "512",
+                "sweep",
+                "--models",
+                "a=m1,b=m2",
+                "--prompts",
+                str(prompt_path),
+                "--output",
+                str(tmp_path / "out"),
+            ],
         )
         assert result.exit_code == 0
 
@@ -80,7 +91,18 @@ def test_max_tokens_propagation_override(tmp_path: Path) -> None:
     ):
         # Run with --max-tokens 512
         result = runner.invoke(
-            main, ["--max-tokens", "512", "sweep", "--models", "a=m1,b=m2", "--prompts", str(prompt_path)]
+            main,
+            [
+                "--max-tokens",
+                "512",
+                "sweep",
+                "--models",
+                "a=m1,b=m2",
+                "--prompts",
+                str(prompt_path),
+                "--output",
+                str(tmp_path / "out"),
+            ],
         )
         if result.exception:
             print(result.exception)

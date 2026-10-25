@@ -36,9 +36,12 @@ def test_num_prompts_limit(tmp_path: Path) -> None:
         patch("infer_check.backends.base.get_backend_for_model"),
         patch.object(TestRunner, "sweep", return_value=mock_result) as mock_sweep,
     ):
+        out = str(tmp_path / "out")  # keep SweepResult.save() out of the checkout's results/
+
         # 1. Test global --num-prompts
         result = runner.invoke(
-            main, ["--num-prompts", "2", "sweep", "--models", "a=m1,b=m2", "--prompts", str(prompt_path)]
+            main,
+            ["--num-prompts", "2", "sweep", "--models", "a=m1,b=m2", "--prompts", str(prompt_path), "--output", out],
         )
         assert result.exit_code == 0
         args, kwargs = mock_sweep.call_args
@@ -60,6 +63,8 @@ def test_num_prompts_limit(tmp_path: Path) -> None:
                 str(prompt_path),
                 "--num-prompts",
                 "3",
+                "--output",
+                out,
             ],
         )
         assert result.exit_code == 0
@@ -68,7 +73,7 @@ def test_num_prompts_limit(tmp_path: Path) -> None:
         assert len(captured_prompts) == 3
 
         # 3. Test without --num-prompts (should use all)
-        result = runner.invoke(main, ["sweep", "--models", "a=m1,b=m2", "--prompts", str(prompt_path)])
+        result = runner.invoke(main, ["sweep", "--models", "a=m1,b=m2", "--prompts", str(prompt_path), "--output", out])
         assert result.exit_code == 0
         args, kwargs = mock_sweep.call_args
         captured_prompts = kwargs.get("prompts") or args[2]
