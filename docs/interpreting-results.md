@@ -27,7 +27,7 @@ Each response gets one of four grades:
 |-------|---------|
 | `correct` | Parsed answer matches the key |
 | `wrong` | Parsed answer doesn't match |
-| `unparsed` | No `Final answer:` line or `\boxed{}`; counts as wrong for accuracy |
+| `unparsed` | No `Final answer:` line or `\boxed{}`; counts as wrong, in accuracy and in the paired table |
 | `truncated` | No answer because generation hit `max_tokens`; see the truncation rule below |
 
 **Truncation rule.** When one configuration hits the token limit on a prompt that the other one finished, the truncation counts as wrong. This both lowers its accuracy and enters the paired table: a regression if the other side was right, both wrong otherwise. Running out of budget where the other model didn't is that model's own failure, typically a repetition loop. When both configurations hit the limit, the prompt is excluded (`both_truncated`), because the budget itself is the likely cause. In that case, raise `max_tokens`.
@@ -43,7 +43,7 @@ Bundled answer keys: all of `gsm8k`, and 43 of the 100 `adversarial-numerics` pr
 
 The flip rate is the fraction of **flip-eligible** prompts where the answer changed between the two models or backends.
 
-For prompts with an answer key, a flip means one side is correct and the other wrong. An `unparsed` response is never a flip; a one-sided `truncated` response is treated as wrong, while two-sided truncations are excluded.
+For prompts with an answer key, a flip means one side is correct and the other wrong. An `unparsed` response and a one-sided `truncated` response are treated as wrong, so a correct answer becoming unparseable is a flip (and a regression); two-sided truncations are excluded. The correctness table reports separately how many regressions came from unparsed answers, so format failures stay distinguishable from wrong values.
 
 For prompts without a key, infer-check falls back to extracting an answer based on the prompt's category:
 

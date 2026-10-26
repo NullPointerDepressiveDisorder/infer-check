@@ -74,12 +74,14 @@ _FINAL = re.compile(r"final\s+answer\s*\**\s*[:：]\s*\**\s*(.+)", re.IGNORECASE
 _BOXED = re.compile(r"\\boxed\{((?:[^{}]|\{[^{}]*\})*)\}")
 
 # Mantissas may omit the leading zero (".5", "-.5"); otherwise ".5" would parse as 5.
+# A number as written: optional sign, comma grouping, decimals, or a leading dot.
+# Shared by every numeric form, so "1,000 × 10^3" and "1,000/2" parse whole.
+_OPERAND = r"-?(?:\d[\d,]*(?:\.\d+)?|\.\d+)"
 _SCI = re.compile(
-    r"(-?(?:\d+(?:\.\d+)?|\.\d+))"  # mantissa
+    rf"(?<![\w.,])({_OPERAND})"  # mantissa; never starts mid-number ("000" of "1,000")
     r"\s*(?:[x×*·]|\\times|\\cdot)\s*10\s*(?:\^|\*\*)\s*\{?\s*([-+]?\d+)\s*\}?"  # × 10^exponent
 )
 _POW10 = re.compile(r"(?<![\d.])(-?)10\s*(?:\^|\*\*)\s*\{?\s*([-+]?\d+)\s*\}?")
-_OPERAND = r"-?(?:\d[\d,]*(?:\.\d+)?|\.\d+)"
 # a/b with signed, comma-grouped or decimal operands ("1,000/2", "1/-2", "1.5/3"). The
 # lookarounds stop it starting mid-number ("1,000/2" must not match "000/2").
 _FRAC = re.compile(rf"(?<![\w.,])({_OPERAND})\s*/\s*({_OPERAND})(?!\w|\.\d)")
@@ -153,7 +155,8 @@ def parse_number(ans: str) -> Number | None:
         for m in _SCI.finditer(s):
             try:
                 # "m × 10^e" is exactly the decimal string "me": no multiplication, no rounding.
-                candidates.append((m.start(), -len(m.group(0)), Decimal(f"{m.group(1)}e{int(m.group(2))}")))
+                mantissa = m.group(1).replace(",", "")
+                candidates.append((m.start(), -len(m.group(0)), Decimal(f"{mantissa}e{int(m.group(2))}")))
             except (ArithmeticError, ValueError):  # exponent beyond Decimal's range, or >4300 digits
                 failed.append(m.start())
         for m in _POW10.finditer(s):
@@ -288,8 +291,11 @@ def paired_correctness(pairs: Iterable[tuple[Grade, Grade]]) -> dict[str, Any] |
     excluded, since then the budget itself is the likely cause.
 
     Unparseable answers (the model stopped without a ``Final answer:``) count as
-    wrong for accuracy but stay out of the 2x2 table and McNemar test, so a
-    formatting slip is never reported as a flip.
+    wrong, in accuracy *and* in the 2x2 table and McNemar test. Accuracy and its
+    significance test must use the same outcomes: otherwise a model that stops
+    giving answers reports 100% -> 0% accuracy with zero regressions and p = 1.
+    How many regressions/improvements came from unparsed answers is reported
+    separately (``regressions_from_unparsed``), so format failures stay visible.
 
     Returns None if there are no graded pairs.
     """
@@ -301,7 +307,9 @@ def paired_correctness(pairs: Iterable[tuple[Grade, Grade]]) -> dict[str, Any] |
     kept = [(a, b) for a, b in raw if not (a == "truncated" and b == "truncated")]
 
     def effective(own: Grade, other: Grade) -> Grade:
-        return "wrong" if own == "truncated" and other != "truncated" else own
+        if own == "unparsed" or (own == "truncated" and other != "truncated"):
+            return "wrong"
+        return own
 
     eff = [(effective(a, b), effective(b, a)) for a, b in kept]
 
@@ -315,15 +323,14 @@ def paired_correctness(pairs: Iterable[tuple[Grade, Grade]]) -> dict[str, Any] |
             "scored": scored,
             "accuracy": correct / scored if scored else None,
             "accuracy_ci95": list(ci) if ci else None,
-            "unparsed": grades.count("unparsed"),
-            # Truncated where the other side finished; already counted as wrong above.
+            # Both already counted as wrong above; reported so the cause is visible.
+            "unparsed": sum(1 for p in kept if p[idx] == "unparsed"),
+            # Truncated where the other side finished.
             "truncated": sum(1 for p in kept if p[idx] == "truncated"),
         }
 
     both_right = regressions = improvements = both_wrong = 0
-    for a, b in eff:
-        if a not in ("correct", "wrong") or b not in ("correct", "wrong"):
-            continue
+    for a, b in eff:  # every effective grade is now correct or wrong
         if a == "correct" and b == "correct":
             both_right += 1
         elif a == "correct":
@@ -337,6 +344,8 @@ def paired_correctness(pairs: Iterable[tuple[Grade, Grade]]) -> dict[str, Any] |
         "n_graded": len(raw),
         "n_paired": both_right + regressions + improvements + both_wrong,
         "both_truncated": both_truncated,
+        "regressions_from_unparsed": sum(1 for a, b in kept if a == "correct" and b == "unparsed"),
+        "improvements_from_unparsed": sum(1 for a, b in kept if a == "unparsed" and b == "correct"),
         "a": side(0),
         "b": side(1),
         "both_right": both_right,

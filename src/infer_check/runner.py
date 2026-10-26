@@ -171,8 +171,8 @@ class TestRunner:
 
         Graded prompts (with an answer key): each side gets a grade
         (correct / wrong / unparsed / truncated); a flip is one side correct and
-        the other wrong. As in ``paired_correctness``, a truncation where the
-        other side finished counts as wrong; unparsed responses are never flips.
+        the other wrong. As in ``paired_correctness``, an unparsed response, or a
+        truncation where the other side finished, counts as wrong.
 
         Free prompts: falls back to category-based answer extraction. Prompts
         whose category has no real extractor, or where no answer could be
@@ -194,10 +194,15 @@ class TestRunner:
             comp.metadata["answer_a"] = final_answer(text_a)
             comp.metadata["answer_b"] = final_answer(text_b)
             comp.metadata["extraction_strategy"] = "answer_key"
-            # Same truncation rule as paired_correctness: running out of budget where
-            # the other side finished is a wrong answer.
-            eff_a = "wrong" if grade_a == "truncated" and grade_b != "truncated" else grade_a
-            eff_b = "wrong" if grade_b == "truncated" and grade_a != "truncated" else grade_b
+
+            # Same rules as paired_correctness: no parseable answer, or running out of
+            # budget where the other side finished, is a wrong answer.
+            def eff(own: str | None, other: str | None) -> str | None:
+                if own == "unparsed" or (own == "truncated" and other != "truncated"):
+                    return "wrong"
+                return own
+
+            eff_a, eff_b = eff(grade_a, grade_b), eff(grade_b, grade_a)
             gradable = {"correct", "wrong"}
             comp.metadata["flipped"] = eff_a in gradable and eff_b in gradable and eff_a != eff_b
             return

@@ -398,6 +398,11 @@ def _print_correctness(table: dict[str, Any] | None, label_a: str, label_b: str)
         f"  regressions {table['regressions']}, improvements {table['improvements']}, "
         f"exact McNemar p = {table['mcnemar_p']:.3g}"
     )
+    if table.get("regressions_from_unparsed") or table.get("improvements_from_unparsed"):
+        console.print(
+            f"  [yellow]from unparsed answers (no Final answer line): {table.get('regressions_from_unparsed', 0)} "
+            f"of the regressions, {table.get('improvements_from_unparsed', 0)} of the improvements[/yellow]"
+        )
     if a["unparsed"] or b["unparsed"] or a["truncated"] or b["truncated"] or table["both_truncated"]:
         console.print(
             f"  [dim]no parseable answer: {a['unparsed']} / {b['unparsed']}; "

@@ -223,15 +223,16 @@ def test_paired_correctness_table() -> None:
         ("correct", "wrong"),  # regression
         ("wrong", "correct"),  # improvement
         ("wrong", "wrong"),
-        ("correct", "unparsed"),  # excluded from 2x2, counts as wrong for B's accuracy
+        ("correct", "unparsed"),  # unparsed counts as wrong: a regression, in accuracy and in the test
     ]
     t = paired_correctness(pairs)  # type: ignore[arg-type]
     assert t is not None
-    assert (t["both_right"], t["regressions"], t["improvements"], t["both_wrong"]) == (1, 2, 1, 1)
-    assert t["n_graded"] == 6 and t["n_paired"] == 5 and t["both_truncated"] == 0
+    assert (t["both_right"], t["regressions"], t["improvements"], t["both_wrong"]) == (1, 3, 1, 1)
+    assert t["n_graded"] == 6 and t["n_paired"] == 6 and t["both_truncated"] == 0
     assert t["a"]["scored"] == 6 and t["a"]["correct"] == 4
     assert t["b"]["scored"] == 6 and t["b"]["correct"] == 2 and t["b"]["unparsed"] == 1
-    assert t["mcnemar_p"] == pytest.approx(mcnemar_exact(2, 1))
+    assert t["regressions_from_unparsed"] == 1 and t["improvements_from_unparsed"] == 0
+    assert t["mcnemar_p"] == pytest.approx(mcnemar_exact(3, 1))
     assert paired_correctness([]) is None
 
 
@@ -241,11 +242,11 @@ def test_truncating_where_the_other_side_finished_counts_as_wrong() -> None:
             ("correct", "truncated"),  # B looped where A answered correctly -> regression
             ("wrong", "truncated"),  # -> both wrong
             ("truncated", "correct"),  # A ran out where B answered -> improvement
-            ("unparsed", "truncated"),  # A stopped without an answer: B wrong, pair stays out of 2x2
+            ("unparsed", "truncated"),  # A stopped without an answer, B ran out: both wrong
         ]
     )
     assert t is not None
-    assert (t["both_right"], t["regressions"], t["improvements"], t["both_wrong"]) == (0, 1, 1, 1)
+    assert (t["both_right"], t["regressions"], t["improvements"], t["both_wrong"]) == (0, 1, 1, 2)
     assert t["a"]["truncated"] == 1 and t["b"]["truncated"] == 3
     # Truncations count against accuracy: B answered 1 of 4 correctly.
     assert t["b"]["scored"] == 4 and t["b"]["correct"] == 1
@@ -430,3 +431,44 @@ def test_negated_boolean_is_unparsed(text: str, expected: str) -> None:
 )
 def test_plain_boolean_answers_still_grade(text: str, expected: str, result: bool) -> None:
     assert is_correct(text, expected, "boolean") is result
+
+
+# ── unparsed answers enter the significance test ────────────────────
+
+
+def test_unparsed_collapse_is_a_significant_regression() -> None:
+    from infer_check.runner import find_degradation_cliff
+
+    t = paired_correctness([("correct", "unparsed")] * 100)
+    assert t is not None
+    assert t["a"]["accuracy"] == 1.0 and t["b"]["accuracy"] == 0.0
+    # Used to report 0 regressions and p = 1 despite the 100% -> 0% accuracy.
+    assert t["regressions"] == 100 and t["mcnemar_p"] < 1e-20
+    assert t["regressions_from_unparsed"] == 100
+    cliff = find_degradation_cliff(["bf16", "4bit"], "bf16", {"4bit": t})
+    assert cliff is not None and cliff["level"] == "4bit"
+
+
+def test_both_unparsed_is_both_wrong_not_a_flip() -> None:
+    t = paired_correctness([("unparsed", "unparsed")])
+    assert t is not None and t["both_wrong"] == 1 and t["regressions"] == t["improvements"] == 0
+
+
+# ── comma-grouped mantissas in scientific notation ──────────────────
+
+
+@pytest.mark.parametrize(
+    ("ans", "value"),
+    [
+        ("1,000 × 10^3", "1000000"),  # was 1000: the mantissa match started at "000"
+        ("-1,234.5 × 10^-2", "-12.345"),
+        ("1,000,000 x 10^{-6}", "1"),
+    ],
+)
+def test_comma_grouped_mantissa(ans: str, value: str) -> None:
+    assert parse_number(ans) == Decimal(value)
+
+
+def test_comma_grouped_mantissa_grades_correctly() -> None:
+    assert is_correct("Final answer: 1,000 × 10^3", "1000000", "integer") is True  # was False
+    assert is_correct("Final answer: 1,000 × 10^3", "1000", "integer") is False  # was True

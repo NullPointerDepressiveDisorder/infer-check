@@ -968,7 +968,15 @@ def _correctness_view(table: dict[str, Any] | None, label_a: str, label_b: str) 
     notes = []
     a, b = table.get("a", {}), table.get("b", {})
     if a.get("unparsed") or b.get("unparsed"):
-        notes.append(f"No parseable answer: {a.get('unparsed', 0)} ({label_a}) / {b.get('unparsed', 0)} ({label_b}).")
+        notes.append(
+            f"No parseable answer, counted wrong: {a.get('unparsed', 0)} ({label_a}) / "
+            f"{b.get('unparsed', 0)} ({label_b})."
+        )
+    if table.get("regressions_from_unparsed") or table.get("improvements_from_unparsed"):
+        notes.append(
+            f"Of the regressions, {table.get('regressions_from_unparsed', 0)} come from unparsed answers; "
+            f"of the improvements, {table.get('improvements_from_unparsed', 0)}."
+        )
     if a.get("truncated") or b.get("truncated"):
         notes.append(
             f"Hit the token limit where the other side finished, counted wrong: "

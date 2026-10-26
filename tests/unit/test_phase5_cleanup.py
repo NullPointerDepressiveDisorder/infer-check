@@ -134,3 +134,25 @@ def test_report_stress_section_lists_divergences(tmp_path: Path) -> None:
     assert "Identical to solo" in html and "(reference)" in html
     assert "reasoning-005" in html and "first differing token 83" in html
     assert "Cannot connect to server" in html
+
+
+def test_correct_to_unparsed_is_a_flip() -> None:
+    # Same rule as the correctness table: no parseable answer counts as wrong.
+    def res(text: str) -> InferenceResult:
+        return InferenceResult(
+            prompt_id="p",
+            backend_name="b",
+            model_id="m",
+            tokens=[],
+            text=text,
+            latency_ms=1.0,
+            metadata={"finish_reason": "stop"},
+        )
+
+    prompt = Prompt(id="p", text="1+1?", answer_type="integer", expected="2")
+    comp = ComparisonResult(
+        baseline=res("Final answer: 2"), test=res("I'm not sure."), text_similarity=0.1, is_failure=True
+    )
+    TestRunner(cache_dir=".test_cache")._annotate_flip_metadata(comp, prompt)
+    assert comp.metadata["grade_b"] == "unparsed"
+    assert comp.metadata["flipped"] is True
