@@ -1,28 +1,86 @@
-import asyncio
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast, get_args
 
+import numpy as np
+import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict, Field
 
-from infer_check.types import InferenceResult, Prompt
+from infer_check.types import InferenceResult, Prompt, TokenScores
 
 __all__ = ["BackendAdapter", "BackendConfig", "get_backend", "get_backend_for_model"]
 
 
 class BackendAdapter(Protocol):
-    """Protocol defining the interface for all inference backends."""
+    """Interface every inference backend implements.
+
+    Backends subclass this explicitly so mypy checks conformance where each
+    backend is defined: members below with ``...`` bodies are treated as
+    abstract, so forgetting one is a type error rather than a silent ``None``
+    at runtime.
+    """
 
     @property
     def name(self) -> str:
-        """The name of the backend."""
+        """Short backend identifier, e.g. ``"mlx-lm"``."""
+        ...
+
+    @property
+    def model_id(self) -> str:
+        """The model this backend instance serves (repo ID, path, or server-side name)."""
+        ...
+
+    @property
+    def supports_concurrency(self) -> bool:
+        """True only if concurrent ``generate()`` calls genuinely overlap.
+
+        HTTP backends return True (the server schedules/batches requests).
+        In-process backends that block the event loop return False; callers
+        must not rely on overlapping calls to them (e.g. for stress tests).
+        """
+        ...
+
+    @property
+    def supports_scoring(self) -> bool:
+        """True if ``score()`` is implemented (teacher-forced log-probs)."""
+        ...
+
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        """Stable hash of the tokenizer's vocabulary, or None if unknown.
+
+        Token-level metrics (KL, top-1 agreement, token divergence) are only computed
+        between backends whose fingerprints match.
+        """
         ...
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """Generate a single inference result for a prompt."""
         ...
 
-    async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        """Generate inference results for a batch of prompts."""
-        return await asyncio.gather(*(self.generate(prompt) for prompt in prompts))
+    async def score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int = 64,
+        at_ids: npt.NDArray[np.int64] | None = None,
+    ) -> TokenScores:
+        """Teacher-forced scoring: log-probs for a *given* continuation of ``prompt``.
+
+        Runs the model over the prompt (templated and encoded exactly as in
+        ``generate``) followed by ``target_ids``, without sampling. Row ``i`` of
+        the result is the distribution predicting ``target_ids[i]``.
+
+        Args:
+            prompt: The prompt the continuation belongs to.
+            target_ids: The token sequence to score (typically another model's output).
+            top_k: How many most-likely tokens to return per position (0 for none).
+            at_ids: Optional ``[len(target_ids), M]`` token IDs; their log-probs are
+                returned in ``TokenScores.at_logprobs``.
+
+        Raises:
+            NotImplementedError: if ``supports_scoring`` is False.
+        """
+        ...
 
     async def health_check(self) -> bool:
         """Check if the backend is ready and responsive."""
@@ -33,12 +91,15 @@ class BackendAdapter(Protocol):
         ...
 
 
+BackendType = Literal["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"]
+
+
 class BackendConfig(BaseModel):
     """Configuration for an inference backend."""
 
     model_config = ConfigDict(extra="allow")
 
-    backend_type: Literal["mlx-lm", "llama-cpp", "vllm-mlx", "openai-compat"]
+    backend_type: BackendType
     model_id: str
     quantization: str | None = None
     hf_revision: str | None = None
@@ -116,8 +177,12 @@ def get_backend_for_model(
 
     # Always normalize the model string first to ensure consistent model_id/base_url
     resolved = resolve_model(model_str, base_url=base_url)
+    chosen = backend_type or resolved.backend
+    valid: tuple[str, ...] = get_args(BackendType)
+    if chosen not in valid:
+        raise ValueError(f"Unknown backend '{chosen}'. Choose one of: {', '.join(valid)}.")
     config = BackendConfig(
-        backend_type=backend_type or resolved.backend,  # type: ignore
+        backend_type=cast(BackendType, chosen),
         model_id=resolved.model_id,
         base_url=base_url or resolved.base_url,
         quantization=quantization or resolved.label,

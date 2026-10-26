@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 
 import click
+from click.core import ParameterSource
 from rich.console import Console
 from rich.table import Table
 
@@ -79,15 +80,24 @@ def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_
     # Update defaults from subcommand if provided
     if max_tokens is not None:
         ctx.obj["max_tokens"] = max_tokens
+        ctx.obj["max_tokens_explicit"] = True
     if num_prompts is not None:
         ctx.obj["num_prompts"] = num_prompts
 
     prompt_list = load_suite(_resolve_prompts(prompts), num_prompts=ctx.obj["num_prompts"])
 
     # Apply global max_tokens only if not explicitly set in the prompt JSONL
+    applied = 0
     for p in prompt_list:
         if "max_tokens" not in p.model_fields_set:
             p.max_tokens = ctx.obj["max_tokens"]
+            applied += 1
+
+    if ctx.obj.get("max_tokens_explicit") and applied < len(prompt_list):
+        console.print(
+            f"[yellow]--max-tokens {ctx.obj['max_tokens']} applied to {applied} of {len(prompt_list)} prompts; "
+            "the rest set their own max_tokens, which takes precedence.[/yellow]"
+        )
 
     return prompt_list
 
@@ -98,7 +108,8 @@ def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_
     "--max-tokens",
     default=1024,
     show_default=True,
-    help="Default max tokens for generation (applies to all prompts unless they specify their own).",
+    help="Max tokens for prompts that don't set their own. Prompt-level max_tokens always wins, "
+    "and every bundled suite sets it, so this only affects custom suites.",
 )
 @click.option(
     "--num-prompts",
@@ -106,12 +117,21 @@ def _load_prompts(ctx: click.Context, prompts: str, max_tokens: int | None, num_
     type=click.IntRange(min=1, clamp=True),
     help="Limit the number of prompts to use from a suite; if omitted, all prompts are used.",
 )
+@click.option(
+    "--keep-distributions",
+    is_flag=True,
+    default=False,
+    help="Keep per-token top-K distributions in saved results (sweep/compare/diff). "
+    "They're only needed to compute KL during the run and make result files ~20x larger.",
+)
 @click.pass_context
-def main(ctx: click.Context, max_tokens: int, num_prompts: int | None) -> None:
+def main(ctx: click.Context, max_tokens: int, num_prompts: int | None, keep_distributions: bool) -> None:
     """infer-check: correctness and reliability testing for LLM inference engines."""
     ctx.ensure_object(dict)
     ctx.obj["max_tokens"] = max_tokens
+    ctx.obj["max_tokens_explicit"] = ctx.get_parameter_source("max_tokens") is not ParameterSource.DEFAULT
     ctx.obj["num_prompts"] = num_prompts
+    ctx.obj["keep_distributions"] = keep_distributions
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +241,7 @@ def sweep(
             chat=chat,
         )
 
-    runner = TestRunner()
+    runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
     result = asyncio.run(
         runner.sweep(
             backend_map=backend_map,
@@ -267,11 +287,13 @@ def sweep(
     table.add_column("moderate", justify="right")
     table.add_column("severe", justify="right", style="red")
     table.add_column("mean_similarity", justify="right")
+    table.add_column("mean KL", justify="right")
+    table.add_column("top-1 agree", justify="right")
 
     for quant_level in quant_levels:
         comps = groups.get(quant_level, [])
         if not comps:
-            table.add_row(quant_level, "N/A", "N/A", "N/A", "N/A", "N/A")
+            table.add_row(quant_level, *["N/A"] * 7)
             continue
 
         severities = {"identical": 0, "minor": 0, "moderate": 0, "severe": 0}
@@ -301,9 +323,103 @@ def sweep(
             f"{severities['moderate']}/{n}",
             f"{severities['severe']}/{n}",
             f"{mean_sim:.4f}",
+            *_kl_cells(comps),
         )
 
     console.print(table)
+    console.print(
+        "[dim]KL = mean per-token KL(baseline ‖ test) in nats; "
+        "TF = teacher-forced (both models score the baseline's tokens), "
+        "prefix = approximate, shared-context positions only.[/dim]"
+    )
+    _print_correctness_by_group(result.summary.get("correctness_by_quant", {}), "quant_level")
+    cliff = result.summary.get("degradation_cliff")
+    if isinstance(cliff, dict):
+        console.print(
+            f"[bold red]Degradation cliff at {cliff['level']}[/bold red]: first level with a significant accuracy "
+            f"loss vs. the baseline ({cliff['regressions']} regressions vs {cliff['improvements']} improvements, "
+            f"exact McNemar p = {cliff['mcnemar_p']:.2g})."
+        )
+
+
+def _fmt_acc(side: dict[str, Any]) -> str:
+    return "N/A" if side.get("accuracy") is None else f"{side['accuracy']:.1%}"
+
+
+def _correctness_cells(table: dict[str, Any] | None) -> tuple[str, str]:
+    """(accuracy A → B, "regressions / improvements (p=…)") for a paired correctness table."""
+    if not table:
+        return "—", "—"
+    p = table["mcnemar_p"]
+    style = "red" if table["regressions"] > table["improvements"] and p < 0.05 else ""
+    flips = f"{table['regressions']} / {table['improvements']} (p={p:.3g})"
+    return f"{_fmt_acc(table['a'])} → {_fmt_acc(table['b'])}", f"[{style}]{flips}[/]" if style else flips
+
+
+def _print_correctness_by_group(tables: dict[str, dict[str, Any] | None], group_label: str) -> None:
+    """One row per group (quant level / backend): accuracy vs the baseline and paired flips."""
+    rows = {name: t for name, t in tables.items() if t}
+    if not rows:
+        return
+    t = Table(title="Correctness vs answer keys (baseline → this)", header_style="bold magenta")
+    t.add_column(group_label, style="cyan")
+    t.add_column("graded", justify="right")
+    t.add_column("accuracy", justify="right")
+    t.add_column("regr / impr (p)", justify="right")
+    for name, table in rows.items():
+        acc, flips = _correctness_cells(table)
+        t.add_row(name, str(table["n_graded"]), acc, flips)
+    console.print(t)
+
+
+def _print_correctness(table: dict[str, Any] | None, label_a: str, label_b: str) -> None:
+    """Paired correctness table against answer keys (skipped when the suite has none)."""
+    if not table:
+        console.print("[dim]No answer keys in this suite: correctness not measured.[/dim]")
+        return
+    a, b = table["a"], table["b"]
+
+    def acc(side: dict[str, Any]) -> str:
+        if side["accuracy"] is None:
+            return "N/A"
+        lo, hi = side["accuracy_ci95"]
+        return f"{side['accuracy']:.1%}  [{lo:.1%}, {hi:.1%}]  ({side['correct']}/{side['scored']})"
+
+    t = Table(title=f"Correctness vs answer keys ({table['n_graded']} graded prompts)", header_style="bold magenta")
+    t.add_column("", style="cyan")
+    t.add_column(f"{label_b} right", justify="right")
+    t.add_column(f"{label_b} wrong", justify="right")
+    t.add_row(f"{label_a} right", str(table["both_right"]), f"[red]{table['regressions']}[/red]")
+    t.add_row(f"{label_a} wrong", f"[green]{table['improvements']}[/green]", str(table["both_wrong"]))
+    console.print(t)
+    console.print(f"  accuracy {label_a}: {acc(a)}")
+    console.print(f"  accuracy {label_b}: {acc(b)}")
+    console.print(
+        f"  regressions {table['regressions']}, improvements {table['improvements']}, "
+        f"exact McNemar p = {table['mcnemar_p']:.3g}"
+    )
+    if table.get("regressions_from_unparsed") or table.get("improvements_from_unparsed"):
+        console.print(
+            f"  [yellow]from unparsed answers (no Final answer line): {table.get('regressions_from_unparsed', 0)} "
+            f"of the regressions, {table.get('improvements_from_unparsed', 0)} of the improvements[/yellow]"
+        )
+    if a["unparsed"] or b["unparsed"] or a["truncated"] or b["truncated"] or table["both_truncated"]:
+        console.print(
+            f"  [dim]no parseable answer: {a['unparsed']} / {b['unparsed']}; "
+            f"hit token limit while the other finished (counted wrong): {a['truncated']} / {b['truncated']}; "
+            f"both hit the limit (excluded): {table['both_truncated']}[/dim]"
+        )
+
+
+def _kl_cells(comps: list[Any]) -> tuple[str, str]:
+    """Format (mean KL with method tag, top-1 agreement) for a group of comparisons."""
+    from infer_check.analysis.divergence import aggregate_kl
+
+    agg = aggregate_kl(comps)
+    if agg["mean_kl"] is None:
+        return "N/A", "N/A"
+    tag = "TF" if agg["method"] == "teacher_forced" else "prefix"
+    return f"{agg['mean_kl']:.4f} ({tag})", f"{agg['mean_top1_agreement']:.1%}"
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +546,7 @@ def compare(
     backend_b = get_backend(config_b)
 
     # ── Run comparison ───────────────────────────────────────────────
-    runner = TestRunner()
+    runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
     compare_result = asyncio.run(
         runner.compare(
             backend_a=backend_a,
@@ -475,7 +591,10 @@ def compare(
         f"[{'red' if compare_result.flip_rate > 0.1 else 'green'}]{compare_result.flip_rate:.1%}[/]",
     )
     if compare_result.mean_kl_divergence is not None:
-        table.add_row("mean KL divergence", f"{compare_result.mean_kl_divergence:.6f}")
+        method = "teacher-forced" if compare_result.kl_method == "teacher_forced" else "prefix, approximate"
+        table.add_row(f"mean KL divergence ({method})", f"{compare_result.mean_kl_divergence:.6f}")
+    if compare_result.mean_top1_agreement is not None:
+        table.add_row("top-1 agreement", f"{compare_result.mean_top1_agreement:.2%}")
     if compare_result.mean_text_similarity is not None:
         table.add_row("mean text similarity", f"{compare_result.mean_text_similarity:.4f}")
     else:
@@ -487,6 +606,7 @@ def compare(
     )
 
     console.print(table)
+    _print_correctness(compare_result.correctness, resolved_a.label, resolved_b.label)
 
     # ── Per-category breakdown ───────────────────────────────────────
     if compare_result.per_category_stats:
@@ -657,7 +777,7 @@ def diff(
     baseline_backend = backend_instances[0]
     test_backends = backend_instances[1:]
 
-    runner = TestRunner()
+    runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
     comparisons = asyncio.run(
         runner.diff(
             baseline_backend=baseline_backend,
@@ -689,6 +809,9 @@ def diff(
 
     from collections import defaultdict
 
+    from infer_check.runner import correctness_summary
+    from infer_check.runner import flip_rate as compute_flip_rate
+
     groups: dict[str, list[Any]] = defaultdict(list)
     for comp in comparisons:
         groups[comp.test.backend_name].append(comp)
@@ -696,8 +819,7 @@ def diff(
     for backend_name, comps in groups.items():
         failures = sum(1 for c in comps if c.is_failure)
         failure_rate = failures / len(comps) if comps else 0.0
-        flips = sum(1 for c in comps if c.metadata.get("flipped", False))
-        flip_rate = flips / len(comps) if comps else 0.0
+        flip_rate = compute_flip_rate(comps)
         mean_sim = sum(c.text_similarity for c in comps) / len(comps) if comps else 0.0
         table.add_row(
             backend_name,
@@ -708,6 +830,7 @@ def diff(
         )
 
     console.print(table)
+    _print_correctness_by_group({name: correctness_summary(comps) for name, comps in groups.items()}, "test_backend")
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +860,14 @@ def diff(
     help="Comma-separated concurrency levels.",
 )
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
+@click.option(
+    "--trials",
+    default=1,
+    show_default=True,
+    type=click.IntRange(min=1),
+    help="Batches per prompt per concurrency level, each with freshly drawn co-scheduled prompts.",
+)
+@click.option("--seed", default=0, show_default=True, help="Seed for choosing co-scheduled prompts.")
 @common_options
 @click.pass_context
 def stress(
@@ -747,12 +878,20 @@ def stress(
     output: Path,
     concurrency: str,
     base_url: str | None,
+    trials: int,
+    seed: int,
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
     chat: bool,
 ) -> None:
-    """Stress-test a backend with varying concurrency levels."""
+    """Check that outputs don't change with what else the server is processing.
+
+    Each prompt runs alone first (the reference). Then, at each concurrency
+    level N, it is sent together with N-1 other prompts from the suite, and its
+    output is compared token-for-token with the solo run. Requires an HTTP
+    server backend; in-process mlx-lm can't run requests concurrently.
+    """
     from infer_check.backends.base import get_backend_for_model
     from infer_check.runner import TestRunner
 
@@ -772,12 +911,20 @@ def stress(
         f"[bold cyan]stress[/bold cyan] model={model} backend={backend_instance.name} concurrency={concurrency_levels}"
     )
 
+    if not backend_instance.supports_concurrency:
+        raise click.ClickException(
+            f"The {backend_instance.name} backend runs requests one at a time, so a stress test can't fail on it. "
+            "Point --backend/--base-url at an HTTP server instead (llama-server, vllm-mlx, mlx_lm.server, vLLM)."
+        )
+
     runner = TestRunner()
     stress_results = asyncio.run(
         runner.stress(
             backend=backend_instance,
             prompts=prompt_list,
             concurrency_levels=concurrency_levels,
+            trials=trials,
+            seed=seed,
         )
     )
 
@@ -794,18 +941,40 @@ def stress(
     console.print(f"[green]Results saved to {out_path}[/green]")
 
     table = Table(title="Stress Test Summary", show_header=True, header_style="bold magenta")
-    table.add_column("concurrency", style="cyan", justify="right")
+    table.add_column("in flight", style="cyan", justify="right")
+    table.add_column("compared", justify="right")
+    table.add_column("identical to solo", justify="right")
+    table.add_column("diverged", justify="right")
     table.add_column("errors", justify="right")
-    table.add_column("output_consistency", justify="right")
 
     for sr in stress_results:
+        is_ref = sr.concurrency_level == 1
+        style = "green" if sr.output_consistency == 1.0 else "red"
         table.add_row(
-            str(sr.concurrency_level),
+            f"{sr.concurrency_level}{' (reference)' if is_ref else ''}",
+            str(sr.compared),
+            "—" if is_ref else f"[{style}]{sr.output_consistency:.1%}[/{style}]",
+            "—" if is_ref else str(len(sr.divergences)),
             str(sr.error_count),
-            f"{sr.output_consistency:.2%}",
         )
-
     console.print(table)
+
+    for sr in stress_results:
+        for msg in sr.error_messages[:3]:
+            console.print(f"[yellow]  errors at {sr.concurrency_level} in flight: {msg}[/yellow]")
+
+    diverged = [(sr.concurrency_level, d) for sr in stress_results for d in sr.divergences]
+    if diverged:
+        dt = Table(title="Diverged outputs (vs. the prompt's solo run)", header_style="bold magenta")
+        dt.add_column("in flight", justify="right")
+        dt.add_column("prompt")
+        dt.add_column("first differing token", justify="right")
+        dt.add_column("sent with")
+        for level, d in diverged[:30]:
+            dt.add_row(str(level), d["prompt_id"], str(d["first_divergence"]), ", ".join(d["co_scheduled"][:4]))
+        console.print(dt)
+        if len(diverged) > 30:
+            console.print(f"[dim]... and {len(diverged) - 30} more (see the results file).[/dim]")
 
 
 # ---------------------------------------------------------------------------

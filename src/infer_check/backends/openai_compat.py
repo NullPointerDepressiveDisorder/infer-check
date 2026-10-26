@@ -6,15 +6,18 @@ Works with any server that implements the ``/v1/completions`` endpoint
 
 from __future__ import annotations
 
-import asyncio
 import math
 import time
 from typing import Any
 
 import httpx
+import numpy as np
+import numpy.typing as npt
 
-from infer_check.types import InferenceResult, Prompt
-from infer_check.utils import format_prompt, strip_thinking_tokens
+from infer_check.analysis.scoring import model_input
+from infer_check.backends.base import BackendAdapter
+from infer_check.types import InferenceResult, Prompt, TokenScores
+from infer_check.utils import format_prompt, normalize_finish_reason, strip_thinking_tokens
 
 __all__ = ["OpenAICompatBackend"]
 
@@ -27,7 +30,7 @@ class _ServerHTTPError(RuntimeError):
         super().__init__(f"Server returned HTTP {status_code}: {body}")
 
 
-class OpenAICompatBackend:
+class OpenAICompatBackend(BackendAdapter):
     """Backend adapter for any OpenAI-compatible completion server.
 
     Supports both ``/v1/completions`` (raw) and ``/v1/chat/completions``
@@ -81,6 +84,37 @@ class OpenAICompatBackend:
     @property
     def name(self) -> str:
         return "openai-compat"
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def supports_concurrency(self) -> bool:
+        # HTTP requests genuinely overlap and the server schedules/batches them.
+        return True
+
+    @property
+    def supports_scoring(self) -> bool:
+        # Possible later via vLLM's `prompt_logprobs`; not implemented yet.
+        return False
+
+    @property
+    def tokenizer_fingerprint(self) -> str | None:
+        # The server's tokenizer isn't visible over HTTP: "unknown", not "different".
+        return None
+
+    async def score(
+        self,
+        prompt: Prompt,
+        target_ids: list[int],
+        *,
+        top_k: int = 64,
+        at_ids: npt.NDArray[np.int64] | None = None,
+    ) -> TokenScores:
+        raise NotImplementedError(
+            f"{self.name} backend does not support teacher-forced scoring; comparisons fall back to prefix KL."
+        )
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
         """POST to the completions or chat/completions endpoint."""
@@ -138,7 +172,8 @@ class OpenAICompatBackend:
         if self._disable_thinking and self._is_ollama:
             return await self._generate_ollama_native(prompt)
 
-        user_text = strip_thinking_tokens(prompt.text) if self._disable_thinking else prompt.text
+        prompt_text = model_input(prompt)
+        user_text = strip_thinking_tokens(prompt_text) if self._disable_thinking else prompt_text
         messages: list[dict[str, str]] = []
         if self._disable_thinking:
             # Empty system message overrides any server-side SYSTEM default
@@ -238,7 +273,7 @@ class OpenAICompatBackend:
         else:
             tokens = text.split()
 
-        usage = data.get("usage", {})
+        usage = data.get("usage") or {}
         completion_tokens = usage.get("completion_tokens", len(tokens))
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
@@ -253,6 +288,10 @@ class OpenAICompatBackend:
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                "finish_reason": normalize_finish_reason(choice.get("finish_reason")),
+                "prompt_tokens": usage.get("prompt_tokens"),
+            },
         )
 
     async def _generate_ollama_native(self, prompt: Prompt) -> InferenceResult:
@@ -263,7 +302,7 @@ class OpenAICompatBackend:
         other variants whose Modelfile TEMPLATE hardcodes the thinking trigger.
         Logprobs are requested via the ``logprobs`` and ``top_logprobs`` fields.
         """
-        user_text = strip_thinking_tokens(prompt.text)
+        user_text = strip_thinking_tokens(model_input(prompt))
         payload: dict[str, Any] = {
             "model": self._model_id,
             "messages": [
@@ -365,12 +404,17 @@ class OpenAICompatBackend:
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                # Ollama native: done_reason in {"stop", "length", ...}
+                "finish_reason": normalize_finish_reason(data.get("done_reason")),
+                "prompt_tokens": data.get("prompt_eval_count"),
+            },
         )
 
     async def _generate_completions(self, prompt: Prompt) -> InferenceResult:
         """Use the legacy ``/v1/completions`` endpoint for raw logprobs."""
         formatted = format_prompt(
-            prompt.text,
+            model_input(prompt),
             model_id=self._model_id,
             revision=self._revision,
             disable_thinking=self._disable_thinking,
@@ -469,7 +513,7 @@ class OpenAICompatBackend:
             tokens = text.split()
 
         # Timing -----------------------------------------------------------
-        usage = data.get("usage", {})
+        usage = data.get("usage") or {}
         completion_tokens = usage.get("completion_tokens", len(tokens))
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
@@ -484,10 +528,11 @@ class OpenAICompatBackend:
             text=text,
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
+            metadata={
+                "finish_reason": normalize_finish_reason(choice.get("finish_reason")),
+                "prompt_tokens": usage.get("prompt_tokens"),
+            },
         )
-
-    async def generate_batch(self, prompts: list[Prompt]) -> list[InferenceResult]:
-        return list(await asyncio.gather(*(self.generate(p) for p in prompts)))
 
     async def health_check(self) -> bool:
         """Verify the server responds to a lightweight models listing."""

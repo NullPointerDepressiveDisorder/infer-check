@@ -22,7 +22,7 @@ class VLLMMLXBackend(OpenAICompatBackend):
         model_id: str,
         base_url: str = "http://127.0.0.1:8000",
         api_key: str | None = None,
-        chat: bool = False,
+        chat: bool = True,
         revision: str | None = None,
         disable_thinking: bool = True,
     ) -> None:

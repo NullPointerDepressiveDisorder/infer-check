@@ -7,6 +7,7 @@ from typing import Any
 
 from rich.progress import Progress
 
+from infer_check.analysis.divergence import KLStats, aggregate_kl, prefix_kl, teacher_forced_kl
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import (
     CompareResult,
@@ -16,55 +17,236 @@ from infer_check.types import (
     Prompt,
     StressResult,
     SweepResult,
+    TokenScores,
 )
 from infer_check.utils import sanitize_filename
+
+_RESULT_DISTRIBUTIONS = {"distributions", "distribution_metadata"}
+_DISTRIBUTION_FIELDS: dict[str, Any] = {"baseline": _RESULT_DISTRIBUTIONS, "test": _RESULT_DISTRIBUTIONS}
+
+# Baseline tokens kept per position for teacher-forced KL. The remaining mass is
+# merged into one bin, so KL is a (very tight) lower bound.
+REFERENCE_TOP_K = 64
+
+
+def _warn(message: str) -> None:
+    from rich.console import Console
+
+    Console().print(f"[yellow]  ⚠ {message}[/yellow]")
+
+
+def flip_rate(comparisons: list[ComparisonResult]) -> float:
+    """Fraction of flip-eligible comparisons whose answer flipped.
+
+    Comparisons with ``metadata["flipped"] is None`` (no meaningful answer to
+    compare) are excluded from the denominator.
+    """
+    eligible = [c for c in comparisons if c.metadata.get("flipped") is not None]
+    return sum(1 for c in eligible if c.metadata["flipped"]) / len(eligible) if eligible else 0.0
+
+
+def tokenizers_conflict(a: BackendAdapter, b: BackendAdapter) -> bool:
+    """True only when both tokenizer fingerprints are known and differ.
+
+    Token IDs from one tokenizer mean different tokens to another, so KL, top-1
+    agreement and token divergence between such backends are meaningless. An
+    unknown fingerprint (HTTP backends) means "can't tell", not "conflict".
+    """
+    fa, fb = a.tokenizer_fingerprint, b.tokenizer_fingerprint
+    return fa is not None and fb is not None and fa != fb
+
+
+def find_degradation_cliff(
+    levels: list[str],
+    baseline: str,
+    correctness_by_level: dict[str, dict[str, Any] | None],
+    alpha: float = 0.05,
+) -> dict[str, Any] | None:
+    """First level, in the order given, with a statistically significant accuracy loss.
+
+    "Significant" means more regressions than improvements against the baseline
+    with exact McNemar p < ``alpha``. Levels are walked in the order the user
+    listed them (typically decreasing precision), never sorted by name.
+    Without answer keys there is no accuracy to lose, so this returns None.
+
+    Returns:
+        ``{"level", "regressions", "improvements", "mcnemar_p"}`` or None.
+    """
+    for level in levels:
+        if level == baseline:
+            continue
+        table = correctness_by_level.get(level)
+        if not table:
+            continue
+        if table["regressions"] > table["improvements"] and table["mcnemar_p"] < alpha:
+            return {
+                "level": level,
+                "regressions": table["regressions"],
+                "improvements": table["improvements"],
+                "mcnemar_p": table["mcnemar_p"],
+            }
+    return None
+
+
+def correctness_summary(comparisons: list[ComparisonResult]) -> dict[str, Any] | None:
+    """Paired correctness table (baseline = A, test = B) over the graded comparisons."""
+    from infer_check.analysis.scoring import paired_correctness
+
+    pairs = [
+        (c.metadata["grade_a"], c.metadata["grade_b"])
+        for c in comparisons
+        if c.metadata.get("grade_a") is not None and c.metadata.get("grade_b") is not None
+    ]
+    return paired_correctness(pairs)
+
+
+def first_divergence(a: InferenceResult, b: InferenceResult) -> int | None:
+    """Index of the first token where two generations differ, or None if identical.
+
+    Compares token IDs when both results have them (exact). Otherwise falls
+    back to per-token display strings, which can split multi-byte characters
+    and so over-report divergence. If one sequence is a prefix of the other,
+    the divergence index is the shorter length.
+    """
+    seq_a: list[int] | list[str]
+    seq_b: list[int] | list[str]
+    if a.token_ids is not None and b.token_ids is not None:
+        seq_a, seq_b = a.token_ids, b.token_ids
+    else:
+        seq_a, seq_b = a.tokens, b.tokens
+    for i, (x, y) in enumerate(zip(seq_a, seq_b, strict=False)):
+        if x != y:
+            return i
+    if len(seq_a) != len(seq_b):
+        return min(len(seq_a), len(seq_b))
+    return None
 
 
 class TestRunner:
     __test__ = False
 
-    def __init__(self, cache_dir: str | Path = ".infer_check_cache"):
+    def __init__(self, cache_dir: str | Path = ".infer_check_cache", keep_distributions: bool = False):
+        """
+        Args:
+            cache_dir: Where intermediate checkpoints are written.
+            keep_distributions: Keep each result's per-token top-K distributions in
+                the returned and saved results. They are only inputs to the KL
+                computation, which happens during the run, and they dominate file
+                size (~400 KB per prompt), so by default they are dropped once
+                every comparison needing them has been computed.
+        """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.keep_distributions = keep_distributions
+        self._tokenizer_warned: set[tuple[int, int]] = set()
+
+    def _token_level(self, a: BackendAdapter, b: BackendAdapter) -> bool:
+        """Whether token-level metrics are meaningful between ``a`` and ``b`` (warns once per pair)."""
+        if not tokenizers_conflict(a, b):
+            return True
+        if (id(a), id(b)) not in self._tokenizer_warned:
+            self._tokenizer_warned.add((id(a), id(b)))
+            _warn(
+                f"{a.name} ({a.model_id}) and {b.name} ({b.model_id}) use different tokenizers: "
+                "token-level metrics (KL, top-1 agreement, token divergence) skipped. "
+                "Correctness and text similarity are still reported."
+            )
+        return False
+
+    def _drop_distributions(self, comparisons: list[ComparisonResult]) -> None:
+        """Release stored top-K distributions once KL has been computed (unless keeping them)."""
+        if self.keep_distributions:
+            return
+        for comp in comparisons:
+            for res in (comp.baseline, comp.test):
+                res.distributions = None
+                res.distribution_metadata = None
 
     def _annotate_flip_metadata(
         self,
         comp: ComparisonResult,
-        text_a: str,
-        text_b: str,
-        category: str,
+        prompt: Prompt,
     ) -> None:
-        """Extract functional answers and check for flips, updating comparison metadata."""
-        from infer_check.analysis.answer_extract import (
-            answers_match,
-            extract_answer,
-        )
+        """Grade both sides and decide whether the answer flipped, updating comparison metadata.
 
-        ans_a = extract_answer(text_a, category)
-        ans_b = extract_answer(text_b, category)
-        flipped = not answers_match(ans_a, ans_b)
+        Graded prompts (with an answer key): each side gets a grade
+        (correct / wrong / unparsed / truncated); a flip is one side correct and
+        the other wrong. As in ``paired_correctness``, an unparsed response, or a
+        truncation where the other side finished, counts as wrong.
 
-        comp.metadata["flipped"] = flipped
+        Free prompts: falls back to category-based answer extraction. Prompts
+        whose category has no real extractor, or where no answer could be
+        extracted from one side, would only be compared by raw text similarity,
+        which says nothing about the answer. They get ``flipped = None`` and are
+        excluded from the flip rate.
+        """
+        from infer_check.analysis.answer_extract import answers_match, extract_answer
+        from infer_check.analysis.scoring import final_answer, grade
+
+        text_a, text_b = comp.baseline.text, comp.test.text
+
+        if prompt.is_graded:
+            grade_a, grade_b = grade(comp.baseline, prompt), grade(comp.test, prompt)
+            comp.metadata["expected"] = prompt.expected
+            comp.metadata["answer_type"] = prompt.answer_type
+            comp.metadata["grade_a"] = grade_a
+            comp.metadata["grade_b"] = grade_b
+            comp.metadata["answer_a"] = final_answer(text_a)
+            comp.metadata["answer_b"] = final_answer(text_b)
+            comp.metadata["extraction_strategy"] = "answer_key"
+
+            # Same rules as paired_correctness: no parseable answer, or running out of
+            # budget where the other side finished, is a wrong answer.
+            def eff(own: str | None, other: str | None) -> str | None:
+                if own == "unparsed" or (own == "truncated" and other != "truncated"):
+                    return "wrong"
+                return own
+
+            eff_a, eff_b = eff(grade_a, grade_b), eff(grade_b, grade_a)
+            gradable = {"correct", "wrong"}
+            comp.metadata["flipped"] = eff_a in gradable and eff_b in gradable and eff_a != eff_b
+            return
+
+        ans_a = extract_answer(text_a, prompt.category)
+        ans_b = extract_answer(text_b, prompt.category)
         comp.metadata["answer_a"] = ans_a.value
         comp.metadata["answer_b"] = ans_b.value
         comp.metadata["extraction_strategy"] = ans_a.strategy
-        comp.metadata["extraction_confidence"] = min(
-            ans_a.confidence,
-            ans_b.confidence,
-        )
+        comp.metadata["extraction_confidence"] = min(ans_a.confidence, ans_b.confidence)
+        if ans_a.strategy == "raw" or not ans_a.value or not ans_b.value:
+            # No extractor for this category, or no answer found on one side:
+            # there's nothing to compare, so this prompt isn't flip-eligible.
+            comp.metadata["flipped"] = None
+        else:
+            comp.metadata["flipped"] = not answers_match(ans_a, ans_b)
 
     def _save_checkpoint(self, results: Any, path: Path) -> None:
         """Write intermediate results as JSON for resumability."""
         path.parent.mkdir(parents=True, exist_ok=True)
+        # A sweep checkpoint can be written while the shared baseline results still
+        # hold distributions (they're dropped at the end), so exclude them here too.
+        exclude = None if self.keep_distributions else _DISTRIBUTION_FIELDS
         if hasattr(results, "model_dump_json"):
             path.write_text(results.model_dump_json(indent=2), encoding="utf-8")
         elif isinstance(results, list):
-            dumped = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
+            dumped = [
+                r.model_dump(mode="json", exclude=exclude if isinstance(r, ComparisonResult) else None)
+                if hasattr(r, "model_dump")
+                else r
+                for r in results
+            ]
             path.write_text(json.dumps(dumped, indent=2), encoding="utf-8")
         else:
             path.write_text(json.dumps(results, indent=2), encoding="utf-8")
 
-    def _compare(self, baseline: InferenceResult, test: InferenceResult, threshold: float = 0.5) -> ComparisonResult:
+    def _compare(
+        self,
+        baseline: InferenceResult,
+        test: InferenceResult,
+        threshold: float = 0.5,
+        kl: KLStats | None = None,
+        token_level: bool = True,
+    ) -> ComparisonResult:
         """Compare a test result against a baseline.
 
         Threshold is the *minimum* text similarity to pass. Default 0.5
@@ -75,18 +257,11 @@ class TestRunner:
           - minor:      similarity >= 0.8
           - moderate:   similarity >= 0.5
           - severe:     similarity < 0.5
+
+        KL: pass teacher-forced ``kl`` stats when both backends could score the
+        baseline's tokens. Otherwise an approximate prefix KL is computed from
+        the stored top-K distributions (see ``prefix_kl``).
         """
-        import numpy as np
-
-        def to_probs(dist: Any) -> Any:
-            if np.any(dist < 0):  # Likely logprobs
-                # Numerical stability: shift logprobs
-                dist = dist - np.max(dist)
-                probs = np.exp(dist)
-                return probs / np.sum(probs)
-            else:  # Likely probs
-                return dist / np.sum(dist)
-
         if baseline.text == test.text:
             text_similarity = 1.0
         else:
@@ -105,96 +280,12 @@ class TestRunner:
         else:
             severity = "severe"
 
-        token_divergence_index = None
-        for i, (b_tok, t_tok) in enumerate(zip(baseline.tokens, test.tokens, strict=False)):
-            if b_tok != t_tok:
-                token_divergence_index = i
-                break
-
-        if token_divergence_index is None and len(baseline.tokens) != len(test.tokens):
-            token_divergence_index = min(len(baseline.tokens), len(test.tokens))
-
-        # KL Divergence computation
-        kl_div = None
-        if baseline.distributions and test.distributions:
-            # Truncate to the shorter sequence
-            min_len = min(len(baseline.distributions), len(test.distributions))
-            kl_per_token = []
-
-            for i in range(min_len):
-                b_dist = np.array(baseline.distributions[i])
-                t_dist = np.array(test.distributions[i])
-
-                # Check if distributions are aligned by token IDs
-                b_meta = (
-                    baseline.distribution_metadata[i]
-                    if baseline.distribution_metadata and i < len(baseline.distribution_metadata)
-                    else None
-                )
-                t_meta = (
-                    test.distribution_metadata[i]
-                    if test.distribution_metadata and i < len(test.distribution_metadata)
-                    else None
-                )
-
-                # MLX: is_aligned=1 (full vocab, indices are IDs)
-                if (
-                    b_meta
-                    and t_meta
-                    and b_meta.get("is_aligned")
-                    and t_meta.get("is_aligned")
-                    and len(b_dist) == len(t_dist)
-                ):
-                    p_prob = to_probs(b_dist)
-                    q_prob = to_probs(t_dist)
-                # llama-server: id_0, id_1, ... (top-K)
-                elif b_meta and t_meta and "id_0" in b_meta and "id_0" in t_meta:
-                    # Align on union of token IDs (can be int IDs or token strings)
-                    b_ids = {v: int(k.split("_")[1]) for k, v in b_meta.items() if k.startswith("id_")}
-                    t_ids = {v: int(k.split("_")[1]) for k, v in t_meta.items() if k.startswith("id_")}
-
-                    # Skip if ID types are different (e.g. int vs str)
-                    b_id_types = {type(v) for v in b_ids}
-                    t_id_types = {type(v) for v in t_ids}
-                    if b_id_types != t_id_types:
-                        continue
-
-                    # Always align on the union of IDs, even if there is no overlap,
-                    # so that highly divergent steps are still reflected in the KL.
-
-                    all_ids = sorted(set(b_ids.keys()) | set(t_ids.keys()), key=lambda x: str(x))
-
-                    p_raw = np.zeros(len(all_ids))
-                    q_raw = np.zeros(len(all_ids))
-
-                    # If the source is logprobs, we should ideally use -inf as neutral.
-                    # But llama.cpp gives probs. MLX gives logprobs.
-                    # Let's convert to probs FIRST then align.
-                    b_prob_orig = to_probs(b_dist)
-                    t_prob_orig = to_probs(t_dist)
-
-                    for idx, tid in enumerate(all_ids):
-                        if tid in b_ids:
-                            p_raw[idx] = b_prob_orig[b_ids[tid]]
-                        if tid in t_ids:
-                            q_raw[idx] = t_prob_orig[t_ids[tid]]
-
-                    p_prob = p_raw / (np.sum(p_raw) + 1e-12)
-                    q_prob = q_raw / (np.sum(q_raw) + 1e-12)
-                else:
-                    # Not aligned or missing IDs - skip KL to avoid meaningless values
-                    continue
-
-                # Standard KL divergence: sum(p * log(p/q))
-                # Using small epsilon to avoid log(0)
-                eps = 1e-10
-                p_prob = np.clip(p_prob, eps, 1.0)
-                q_prob = np.clip(q_prob, eps, 1.0)
-                kl = np.sum(p_prob * np.log(p_prob / q_prob))
-                kl_per_token.append(float(kl))
-
-            if kl_per_token:
-                kl_div = float(np.mean(kl_per_token))
+        # Token IDs are only comparable when both sides share a tokenizer.
+        token_divergence_index = first_divergence(baseline, test) if token_level else None
+        if not token_level:
+            kl = None
+        elif kl is None:
+            kl = prefix_kl(baseline, test, token_divergence_index)
 
         return ComparisonResult(
             baseline=baseline,
@@ -202,7 +293,13 @@ class TestRunner:
             text_similarity=text_similarity,
             is_failure=is_failure,
             token_divergence_index=token_divergence_index,
-            kl_divergence=kl_div,
+            kl_divergence=kl.mean if kl else None,
+            kl_method=kl.method if kl else None,
+            kl_max=kl.max if kl else None,
+            kl_p99=kl.p99 if kl else None,
+            kl_positions=kl.n_positions if kl else None,
+            kl_per_token=kl.per_token if kl else None,
+            top1_agreement=kl.top1_agreement if kl else None,
             failure_reason=f"[{severity}] Text similarity {text_similarity:.3f} below threshold"
             if is_failure
             else None,
@@ -213,6 +310,55 @@ class TestRunner:
                 "category": baseline.metadata.get("prompt_category") or baseline.metadata.get("category"),
             },
         )
+
+    async def _reference_scores(
+        self,
+        backend: BackendAdapter,
+        prompts: list[Prompt],
+        results: dict[str, InferenceResult],
+    ) -> dict[str, TokenScores]:
+        """Score each baseline result's own tokens with the baseline model.
+
+        These top-K distributions are the reference that test models are
+        compared against. Must run while the baseline model is still loaded.
+        Returns an empty dict if the backend can't score.
+        """
+        refs: dict[str, TokenScores] = {}
+        if not backend.supports_scoring:
+            return refs
+        for prompt in prompts:
+            res = results.get(prompt.id)
+            if res is None or not res.token_ids:
+                continue
+            try:
+                refs[prompt.id] = await backend.score(prompt, res.token_ids, top_k=REFERENCE_TOP_K)
+            except Exception as exc:
+                _warn(f"Reference scoring failed for '{prompt.id}' on {backend.name}: {exc}")
+        return refs
+
+    async def _teacher_forced(
+        self,
+        backend: BackendAdapter,
+        prompt: Prompt,
+        baseline: InferenceResult,
+        ref: TokenScores | None,
+        token_level: bool = True,
+    ) -> KLStats | None:
+        """Score the baseline's tokens with ``backend`` and compare against ``ref``.
+
+        The baseline's token IDs are fed to the test model as-is, so this only
+        makes sense when both share a tokenizer; callers pass ``token_level``
+        from ``_token_level``. Returns None when token-level metrics are off,
+        or when either side can't score (the caller then falls back to prefix KL).
+        """
+        if not token_level or ref is None or not backend.supports_scoring or not baseline.token_ids:
+            return None
+        try:
+            scores = await backend.score(prompt, baseline.token_ids, top_k=0, at_ids=ref.top_ids)
+        except Exception as exc:
+            _warn(f"Teacher-forced scoring failed for '{prompt.id}' on {backend.name}: {exc}")
+            return None
+        return teacher_forced_kl(ref, scores)
 
     async def sweep(
         self,
@@ -234,7 +380,7 @@ class TestRunner:
         """
         baseline_results: dict[str, InferenceResult] = {}
         all_comparisons: list[ComparisonResult] = []
-        failure_counts: dict[str, int] = {q: 0 for q in quantization_levels}
+        failure_counts: dict[str, int] = dict.fromkeys(quantization_levels, 0)
 
         if baseline_quant is None:
             if not quantization_levels:
@@ -268,6 +414,11 @@ class TestRunner:
                 baseline_results[res.prompt_id] = res
                 progress.advance(task)
 
+            # ---- Reference scores for teacher-forced KL (baseline still loaded) ----
+            if baseline_backend.supports_scoring:
+                progress.update(task, description=f"[cyan]Scoring baseline reference ({baseline_quant})...")
+            refs = await self._reference_scores(baseline_backend, prompts, baseline_results)
+
             # ---- Baseline pass 2: self-check for determinism ----
             progress.update(task, description=f"[cyan]Baseline self-check ({baseline_quant})...")
             for prompt in prompts:
@@ -286,7 +437,12 @@ class TestRunner:
                     continue
                 if not res2.quantization:
                     res2.quantization = baseline_quant
-                comp = self._compare(baseline_results[prompt.id], res2)
+                ref_res = baseline_results[prompt.id]
+                # Re-scoring with the same model should give KL == 0 exactly;
+                # anything else means scoring itself is nondeterministic.
+                kl = await self._teacher_forced(baseline_backend, prompt, ref_res, refs.get(prompt.id))
+                comp = self._compare(ref_res, res2, kl=kl)
+                self._annotate_flip_metadata(comp, prompt)
                 comp.metadata["is_self_check"] = True
                 all_comparisons.append(comp)
                 if comp.is_failure:
@@ -321,7 +477,10 @@ class TestRunner:
 
                     baseline = baseline_results.get(res.prompt_id)
                     if baseline:
-                        comp = self._compare(baseline, res)
+                        tl = self._token_level(baseline_backend, backend)
+                        kl = await self._teacher_forced(backend, prompt, baseline, refs.get(prompt.id), tl)
+                        comp = self._compare(baseline, res, kl=kl, token_level=tl)
+                        self._annotate_flip_metadata(comp, prompt)
                         all_comparisons.append(comp)
                         if comp.is_failure:
                             failure_counts[quant] = failure_counts.get(quant, 0) + 1
@@ -337,16 +496,33 @@ class TestRunner:
 
                 await backend.cleanup()
 
-        kl_values = [c.kl_divergence for c in all_comparisons if c.kl_divergence is not None]
-        mean_kl = sum(kl_values) / len(kl_values) if kl_values else None
+        # KL per quantization level. Pooling across levels would be meaningless.
+        kl_by_quant = {
+            quant: aggregate_kl([c for c in all_comparisons if (c.test.quantization or "unknown") == quant])
+            for quant in quantization_levels
+        }
+        # Back-compat key: pooled over non-baseline levels only.
+        pooled = aggregate_kl([c for c in all_comparisons if not c.metadata.get("is_self_check")])
 
         summary = {
             "total_prompts": len(prompts),
             "quantization_levels": quantization_levels,
             "baseline_quant": baseline_quant,
             "failure_counts": failure_counts,
-            "mean_kl_divergence": mean_kl,
+            "mean_kl_divergence": pooled["mean_kl"],
+            "kl_method": pooled["method"],
+            "kl_by_quant": kl_by_quant,
+            # Paired correctness of each level against the baseline (None without answer keys).
+            "correctness_by_quant": {
+                quant: correctness_summary([c for c in all_comparisons if (c.test.quantization or "unknown") == quant])
+                for quant in quantization_levels
+            },
         }
+        summary["degradation_cliff"] = find_degradation_cliff(
+            quantization_levels, baseline_quant, summary["correctness_by_quant"]
+        )
+
+        self._drop_distributions(all_comparisons)
 
         return SweepResult(
             model_id=model_id,
@@ -408,6 +584,11 @@ class TestRunner:
                 results_a[res.prompt_id] = res
                 progress.advance(task)
 
+            # ── Reference scores from A (teacher-forced KL) ──────────
+            if backend_a.supports_scoring:
+                progress.update(task, description=f"[cyan]Scoring reference ({label_a})...")
+            refs = await self._reference_scores(backend_a, prompts, results_a)
+
             # ── Pass 2: generate from model B ────────────────────────
             progress.update(task, description=f"[cyan]Generating from {label_b}...")
             for prompt in prompts:
@@ -427,24 +608,24 @@ class TestRunner:
                 progress.advance(task)
 
         # ── Build comparisons with answer extraction ────────────────
+        tl = self._token_level(backend_a, backend_b)
         for prompt in prompts:
             a = results_a.get(prompt.id)
             b = results_b.get(prompt.id)
             if a and b:
-                comp = self._compare(a, b)
-                self._annotate_flip_metadata(comp, a.text, b.text, prompt.category)
+                kl = await self._teacher_forced(backend_b, prompt, a, refs.get(prompt.id), tl)
+                comp = self._compare(a, b, kl=kl, token_level=tl)
+                self._annotate_flip_metadata(comp, prompt)
                 comparisons.append(comp)
 
         # ── Aggregate metrics ────────────────────────────────────────
         n = len(comparisons)
 
-        # Flip rate via answer extraction (not severity proxy).
-        flip_count = sum(1 for c in comparisons if c.metadata.get("flipped", False))
-        flip_rate = flip_count / n if n > 0 else 0.0
+        # Flip rate over flip-eligible prompts; correctness over prompts with answer keys.
+        overall_flip_rate = flip_rate(comparisons)
+        correctness = correctness_summary(comparisons)
 
-        # KL divergence (only if both sides have logprobs).
-        kl_values = [c.kl_divergence for c in comparisons if c.kl_divergence is not None]
-        mean_kl: float | None = sum(kl_values) / len(kl_values) if kl_values else None
+        kl_summary = aggregate_kl(comparisons)
 
         mean_sim: float | None = sum(c.text_similarity for c in comparisons) / n if n > 0 else None
 
@@ -456,15 +637,17 @@ class TestRunner:
         per_category: dict[str, dict[str, Any]] = {}
         for cat, cat_comps in cat_groups.items():
             cat_n = len(cat_comps)
-            cat_flips = sum(1 for c in cat_comps if c.metadata.get("flipped", False))
-            cat_kl_values = [c.kl_divergence for c in cat_comps if c.kl_divergence is not None]
-            cat_mean_kl = sum(cat_kl_values) / len(cat_kl_values) if cat_kl_values else None
+            cat_kl = aggregate_kl(cat_comps)
             per_category[cat] = {
                 "count": cat_n,
-                "flip_rate": cat_flips / cat_n,
+                "flip_rate": flip_rate(cat_comps),
+                "correctness": correctness_summary(cat_comps),
                 "mean_similarity": sum(c.text_similarity for c in cat_comps) / cat_n,
-                "mean_kl_divergence": cat_mean_kl,
+                "mean_kl_divergence": cat_kl["mean_kl"],
+                "mean_top1_agreement": cat_kl["mean_top1_agreement"],
             }
+
+        self._drop_distributions(comparisons)
 
         # ── Cleanup ──────────────────────────────────────────────────
         await backend_a.cleanup()
@@ -486,8 +669,11 @@ class TestRunner:
             backend_a=backend_a.name,
             backend_b=backend_b.name,
             comparisons=comparisons,
-            flip_rate=flip_rate,
-            mean_kl_divergence=mean_kl,
+            flip_rate=overall_flip_rate,
+            correctness=correctness,
+            mean_kl_divergence=kl_summary["mean_kl"],
+            kl_method=kl_summary["method"],
+            mean_top1_agreement=kl_summary["mean_top1_agreement"],
             mean_text_similarity=mean_sim,
             per_category_stats=per_category,
         )
@@ -522,6 +708,11 @@ class TestRunner:
                 baseline_results[res.prompt_id] = res
                 progress.advance(task)
 
+            # Reference scores for teacher-forced KL (only used if a test backend can score too).
+            refs: dict[str, TokenScores] = {}
+            if any(tb.supports_scoring for tb in test_backends):
+                refs = await self._reference_scores(baseline_backend, prompts, baseline_results)
+
             # Test backends pass
             for test_backend in test_backends:
                 progress.update(task, description=f"[green]Running test backend ({test_backend.name})...")
@@ -540,88 +731,162 @@ class TestRunner:
                         continue
                     baseline = baseline_results.get(test_res.prompt_id)
                     if baseline:
-                        comp = self._compare(baseline, test_res)
-                        self._annotate_flip_metadata(comp, baseline.text, test_res.text, prompt.category)
+                        tl = self._token_level(baseline_backend, test_backend)
+                        kl = await self._teacher_forced(test_backend, prompt, baseline, refs.get(prompt.id), tl)
+                        comp = self._compare(baseline, test_res, kl=kl, token_level=tl)
+                        self._annotate_flip_metadata(comp, prompt)
                         comparisons.append(comp)
                     progress.advance(task)
 
+        self._drop_distributions(comparisons)
         return comparisons
+
+    @staticmethod
+    async def _safe_generate(backend: BackendAdapter, prompt: Prompt) -> InferenceResult | Exception:
+        try:
+            res = await backend.generate(prompt)
+        except Exception as exc:
+            return exc
+        res.metadata["prompt_text"] = prompt.text
+        res.metadata["prompt_category"] = prompt.category
+        return res
 
     async def stress(
         self,
         backend: BackendAdapter,
         prompts: list[Prompt],
         concurrency_levels: list[int] | None = None,
+        *,
+        fillers: list[Prompt] | None = None,
+        trials: int = 1,
+        seed: int = 0,
     ) -> list[StressResult]:
-        """Run stress tests with varying concurrency levels and compare for consistency."""
-        if concurrency_levels is None:
-            concurrency_levels = [1, 2, 4, 8]
+        """Check that a prompt's output doesn't depend on what else is in flight.
 
+        Batching servers compute each request together with whatever else is
+        scheduled, and some kernels give slightly different results depending on
+        batch size and composition. Under greedy decoding a single flipped token
+        changes the rest of the output. This is the main source of serving
+        nondeterminism.
+
+        - Level 1: every prompt runs alone, one at a time. This is the reference.
+        - Level N > 1: each prompt (the target) is sent at the same time as N-1
+          *other* prompts drawn at random (seeded) from ``fillers`` (default: the
+          suite itself), and its output is compared token-for-token with its solo
+          run. Each trial draws new fillers, so batch composition varies.
+
+        Args:
+            backend: Must support real concurrency (an HTTP server). In-process
+                backends run requests one at a time, so the test could never fail.
+            prompts: Targets.
+            concurrency_levels: Requests in flight per batch; 1 is always run first.
+            fillers: Prompts to co-schedule with each target (default: ``prompts``).
+            trials: Batches per target per level, each with fresh fillers.
+            seed: Seed for filler selection, so runs are reproducible.
+
+        Raises:
+            ValueError: if the backend doesn't support concurrency.
+        """
+        import random
+
+        if not backend.supports_concurrency:
+            raise ValueError(
+                f"The {backend.name} backend runs requests one at a time, so a stress test can't fail on it. "
+                "Run stress against an HTTP server (llama-server, vllm-mlx, mlx_lm.server, vLLM, ...)."
+            )
+        levels = sorted({lvl for lvl in (concurrency_levels or [1, 2, 4, 8]) if lvl >= 1} | {1})
+        pool = fillers or prompts
+        rng = random.Random(seed)  # nosec B311 - reproducible test sampling, not security
+
+        total = len(prompts) * (1 + trials * (len(levels) - 1))
         results: list[StressResult] = []
-        baseline_results: dict[str, InferenceResult] = {}
 
         with Progress() as progress:
-            task = progress.add_task("[magenta]Running stress test...", total=len(concurrency_levels) * len(prompts))
+            task = progress.add_task("[magenta]Stress: solo reference...", total=total)
 
-            for concurrency in concurrency_levels:
-                sem = asyncio.Semaphore(concurrency)
+            def note(messages: list[str], exc: Exception) -> None:
+                msg = f"{type(exc).__name__}: {exc}"[:300]
+                if msg not in messages and len(messages) < 10:
+                    messages.append(msg)
 
-                async def _run(p: Prompt, _sem: asyncio.Semaphore = sem) -> InferenceResult | Exception:
-                    async with _sem:
-                        try:
-                            res = await backend.generate(p)
-                            res.metadata["prompt_text"] = p.text
-                            res.metadata["prompt_category"] = p.category
-                            return res
-                        except Exception as e:
-                            return e
-
-                coros = [_run(p) for p in prompts]
-                # Gather returns results in the same order as coros
-                batch_results_or_errs = await asyncio.gather(*coros, return_exceptions=True)
-                progress.advance(task, advance=len(prompts))
-
-                valid_results: list[InferenceResult] = []
-                error_count = 0
-                for r in batch_results_or_errs:
-                    if isinstance(r, BaseException):
-                        error_count += 1
-                    else:
-                        valid_results.append(r)
-
-                consistent_count = 0
-                total_compared = 0
-
-                if not baseline_results:
-                    # Treat the first run (e.g. concurrency=1) as the baseline
-                    for valid_res in valid_results:
-                        baseline_results[valid_res.prompt_id] = valid_res
-
-                for valid_res in valid_results:
-                    b = baseline_results.get(valid_res.prompt_id)
-                    if b:
-                        total_compared += 1
-                        if b.text == valid_res.text:
-                            consistent_count += 1
-
-                output_consistency = consistent_count / max(1, total_compared)
-
-                # Fetch model_id from results or backend config
-                model_id = "unknown"
-                if valid_results:
-                    model_id = valid_results[0].model_id
-                elif hasattr(backend, "config") and hasattr(backend.config, "model_id"):
-                    model_id = backend.config.model_id
-
-                sr = StressResult(
-                    model_id=model_id,
+            # ── Level 1: each prompt alone ──────────────────────────────
+            solo: dict[str, InferenceResult] = {}
+            solo_errors = 0
+            solo_messages: list[str] = []
+            for prompt in prompts:
+                out = await self._safe_generate(backend, prompt)
+                if isinstance(out, Exception):
+                    solo_errors += 1
+                    note(solo_messages, out)
+                    _warn(f"Solo run failed for '{prompt.id}': {out}")
+                else:
+                    solo[prompt.id] = out
+                progress.advance(task)
+            results.append(
+                StressResult(
+                    model_id=next(iter(solo.values())).model_id if solo else backend.model_id,
                     backend_name=backend.name,
-                    concurrency_level=concurrency,
-                    results=valid_results,
-                    error_count=error_count,
-                    output_consistency=output_consistency,
+                    concurrency_level=1,
+                    results=list(solo.values()),
+                    error_count=solo_errors,
+                    output_consistency=1.0,  # the reference, by definition
+                    compared=len(solo),
+                    error_messages=solo_messages,
                 )
-                results.append(sr)
+            )
+
+            # ── Level N: each target alongside N-1 other prompts ────────
+            for level in levels[1:]:
+                progress.update(task, description=f"[magenta]Stress: {level} in flight...")
+                outputs: list[InferenceResult] = []
+                divergences: list[dict[str, Any]] = []
+                messages: list[str] = []
+                errors = consistent = compared = 0
+                for trial in range(trials):
+                    for target in prompts:
+                        reference = solo.get(target.id)
+                        if reference is None:
+                            progress.advance(task)
+                            continue
+                        others = [p for p in pool if p.id != target.id] or pool
+                        k = level - 1
+                        chosen = rng.sample(others, k) if len(others) >= k else [rng.choice(others) for _ in range(k)]
+                        batch = await asyncio.gather(*(self._safe_generate(backend, p) for p in [target, *chosen]))
+                        for o in batch:
+                            if isinstance(o, Exception):
+                                errors += 1
+                                note(messages, o)
+                        out = batch[0]
+                        progress.advance(task)
+                        if isinstance(out, Exception):
+                            continue
+                        compared += 1
+                        outputs.append(out)
+                        if out.text == reference.text:
+                            consistent += 1
+                        else:
+                            divergences.append(
+                                {
+                                    "prompt_id": target.id,
+                                    "trial": trial,
+                                    "first_divergence": first_divergence(reference, out),
+                                    "co_scheduled": [p.id for p in chosen],
+                                }
+                            )
+                results.append(
+                    StressResult(
+                        model_id=outputs[0].model_id if outputs else backend.model_id,
+                        backend_name=backend.name,
+                        concurrency_level=level,
+                        results=outputs,
+                        error_count=errors,
+                        output_consistency=consistent / compared if compared else 0.0,
+                        trials=trials,
+                        compared=compared,
+                        divergences=divergences,
+                        error_messages=messages,
+                    )
+                )
 
         return results
 
@@ -668,13 +933,11 @@ class TestRunner:
                     if r.text == first.text:
                         identical_count += 1
                     else:
-                        div_idx = None
-                        for i, (t1, t2) in enumerate(zip(first.tokens, r.tokens, strict=False)):
-                            if t1 != t2:
-                                div_idx = i
-                                break
+                        div_idx = first_divergence(first, r)
                         if div_idx is None:
-                            div_idx = min(len(first.tokens), len(r.tokens))
+                            # Same tokens but different text shouldn't happen; record the
+                            # end of the sequence rather than dropping the divergence.
+                            div_idx = len(first.token_ids or first.tokens)
                         divergence_positions.append(div_idx)
 
                 det_res = DeterminismResult(

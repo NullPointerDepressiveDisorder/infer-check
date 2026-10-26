@@ -10,3 +10,9 @@ coverage:
       default:
         target: auto
         threshold: 1%
+
+ignore:
+    - "tests/*"
+    - "docs/*"
+    - "tests/*/**"
+    - "docs/*/**"
