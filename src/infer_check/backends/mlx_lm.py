@@ -257,10 +257,15 @@ class MLXBackend(BackendAdapter):
                 distributions.append(vals)
                 distribution_metadata.append({f"id_{i}": t for i, t in enumerate(ids)})
 
-        extra: dict[str, Any] = {}
+        # mlx-lm takes the log-softmax in the logits' own dtype. For bf16 models
+        # that rounds per-token log-probs to the bf16 spacing at the logit's
+        # magnitude: 0.125 near Gemma 4's soft-cap of 30, so log-probs come out
+        # in multiples of 1/16. Casting first matches ``_score``. The values are
+        # unchanged, so greedy decoding still picks the same tokens.
+        processors: list[Callable[[mx.array, mx.array], mx.array]] = [lambda _tokens, logits: logits.astype(mx.float32)]
         if self._logits_transform is not None:
             transform = self._logits_transform
-            extra["logits_processors"] = [lambda _tokens, logits: transform(logits)]
+            processors.append(lambda _tokens, logits: transform(logits))
 
         start = time.perf_counter()
         for resp in stream_generate(
@@ -269,7 +274,7 @@ class MLXBackend(BackendAdapter):
             prompt_ids,  # pass IDs so BOS handling is under our control
             max_tokens=prompt.max_tokens,
             sampler=make_sampler(temp=temp),
-            **extra,
+            logits_processors=processors,
         ):
             # Always keep the text: the final response carries the detokenizer's flush.
             pieces.append(resp.text)

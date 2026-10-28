@@ -229,18 +229,27 @@ def test_health_check_uses_real_generation_path(backend: MLXBackend, fake_mlx_lm
     assert asyncio.run(backend.health_check()) is False
 
 
+def test_logits_cast_to_float32_before_log_softmax(backend: MLXBackend, fake_mlx_lm: dict[str, Any]) -> None:
+    """mlx-lm takes the log-softmax in the logits' dtype, which bf16 rounds coarsely."""
+    fake_mlx_lm["responses"] = [resp("", EOS, "stop")]
+    run(backend, Prompt(id="p", text="hi"))
+    processors = fake_mlx_lm["calls"][0]["logits_processors"]
+    assert len(processors) == 1
+    logits = mx.array([[30.0, 29.875, -5.0]], dtype=mx.bfloat16)
+    out = processors[0]([1, 2], logits)
+    assert out.dtype == mx.float32
+    # Same values, so greedy decoding picks the same token.
+    assert mx.array_equal(out, logits.astype(mx.float32)).item()
+
+
 def test_logits_transform_reaches_generation(backend: MLXBackend, fake_mlx_lm: dict[str, Any]) -> None:
     seen: list[Any] = []
     backend._logits_transform = lambda logits: seen.append(logits) or logits
     fake_mlx_lm["responses"] = [resp("", EOS, "stop")]
     run(backend, Prompt(id="p", text="hi"))
     processors = fake_mlx_lm["calls"][0]["logits_processors"]
-    assert len(processors) == 1
-    marker = object()
-    assert processors[0]([1, 2], marker) is marker and seen == [marker]
-
-
-def test_no_logits_processors_by_default(backend: MLXBackend, fake_mlx_lm: dict[str, Any]) -> None:
-    fake_mlx_lm["responses"] = [resp("", EOS, "stop")]
-    run(backend, Prompt(id="p", text="hi"))
-    assert "logits_processors" not in fake_mlx_lm["calls"][0]
+    assert len(processors) == 2  # float32 cast, then the transform
+    out = mx.zeros((1, 3), dtype=mx.bfloat16)
+    for proc in processors:
+        out = proc([1, 2], out)
+    assert len(seen) == 1 and seen[0].dtype == mx.float32

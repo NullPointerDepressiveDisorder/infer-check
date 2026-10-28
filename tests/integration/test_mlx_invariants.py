@@ -100,7 +100,12 @@ def test_scoring_reproduces_greedy_generation(backend: MLXBackend) -> None:
     assert len(s) == len(ids)
     assert np.mean(s.argmax == ids) >= 0.95
     assert s.at_logprobs is not None
-    assert np.max(np.abs(s.at_logprobs[:, 0] - np.array(r.logprobs))) < 0.15
+    diff = np.abs(s.at_logprobs[:, 0] - np.array(r.logprobs))
+    # A misalignment would move the median by nats. Only the tail is bounded
+    # loosely: at large logit magnitudes (Gemma 4 soft-caps at 30) one bf16
+    # step is 0.125, and the two kernel paths can land a step apart.
+    assert np.median(diff) < 0.01
+    assert np.percentile(diff, 95) < 0.1
 
 
 def test_rescoring_with_same_model_gives_zero_kl(backend: MLXBackend) -> None:

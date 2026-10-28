@@ -42,7 +42,7 @@ mlx = [
     "mlx>=0.32.2; sys_platform == 'darwin'",
     # On Linux, plain `mlx` installs without its backend library (libmlx.so); the cpu extra provides it.
     "mlx[cpu]>=0.32.2; sys_platform == 'linux'",
-    "mlx-lm<0.32.2",
+    "mlx-lm>=0.32.2,<0.33",
 ]
 analysis = ["matplotlib>=3.10.8", "scikit-learn>=1.8.0"]
 http = [

@@ -806,9 +806,9 @@ requires-dist = [
     { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'all'", specifier = ">=0.32.2" },
     { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'dev'", specifier = ">=0.32.2" },
     { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'mlx'", specifier = ">=0.32.2" },
-    { name = "mlx-lm", marker = "extra == 'all'", specifier = "<0.32.2" },
-    { name = "mlx-lm", marker = "extra == 'dev'", specifier = "<0.32.2" },
-    { name = "mlx-lm", marker = "extra == 'mlx'", specifier = "<0.32.2" },
+    { name = "mlx-lm", marker = "extra == 'all'", specifier = ">=0.32.2,<0.33" },
+    { name = "mlx-lm", marker = "extra == 'dev'", specifier = ">=0.32.2,<0.33" },
+    { name = "mlx-lm", marker = "extra == 'mlx'", specifier = ">=0.32.2,<0.33" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.1" },
     { name = "numpy", specifier = ">=2.4.3" },
     { name = "pydantic", specifier = ">=2.12.5" },
@@ -1545,7 +1545,7 @@ wheels = [
 
 [[package]]
 name = "mlx-lm"
-version = "0.30.7"
+version = "0.32.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
@@ -1556,9 +1556,9 @@ dependencies = [
     { name = "sentencepiece" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/66/0d/56542e2ae13ec6f542d3977d7cff89a205d4f6c5122e0ce23f33265f61c9/mlx_lm-0.30.7.tar.gz", hash = "sha256:e5f31ac58d9f2381f28e1ba639ff903e64f7cff1bdc245c0bc97f72264be329c", size = 275764, upload-time = "2026-02-12T18:41:11.86Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/46/eff1c17019b82912020d4d716527e6fcf4ac392b55cddef03eeb60566ab4/mlx_lm-0.32.2.tar.gz", hash = "sha256:1af8a92f6a141c3e2bf5b0369ac4464203a8e2189c47b9e40d3e921e5b3a1fe9", size = 449827, upload-time = "2026-10-16T02:49:34.781Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/17/a41c798a3d9cbdc47f39c6db5bba4c2cd199203ead26bf911cb03b644070/mlx_lm-0.30.7-py3-none-any.whl", hash = "sha256:17442a4bf01c4c2d3bca1e647712fe44f19890c3f1eadc8589d389e57b44b9bf", size = 386591, upload-time = "2026-02-12T18:41:10.236Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/4f/000eefdeb41388782b47e7f39904cf2d9e7e49a60df5e172097c358dba8e/mlx_lm-0.32.2-py3-none-any.whl", hash = "sha256:5c0991248cfff5872503d74f466d2532dd8cb7fb3670cb9be7a06d7305dadc04", size = 546040, upload-time = "2026-10-16T02:49:33.32Z" },
 ]
 
 [[package]]
