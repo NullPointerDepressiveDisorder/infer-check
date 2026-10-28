@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 import click
 from click.core import ParameterSource
@@ -16,10 +16,8 @@ from rich.table import Table
 
 console = Console()
 
-F = TypeVar("F", bound=Callable[..., Any])
 
-
-def common_options(f: F) -> F:
+def common_options[F: Callable[..., Any]](f: F) -> F:
     """Add common options to all subcommands."""
     options = [
         click.option(

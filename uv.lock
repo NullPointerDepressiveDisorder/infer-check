@@ -3,10 +3,10 @@ revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'darwin'",
-    "python_full_version < '3.15' and sys_platform == 'darwin'",
     "python_full_version >= '3.15' and sys_platform == 'linux'",
-    "python_full_version < '3.15' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and sys_platform != 'darwin' and sys_platform != 'linux'",
+    "python_full_version < '3.15' and sys_platform == 'darwin'",
+    "python_full_version < '3.15' and sys_platform == 'linux'",
     "python_full_version < '3.15' and sys_platform != 'darwin' and sys_platform != 'linux'",
 ]
 
@@ -800,15 +800,15 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'all'", specifier = ">=3.10.8" },
     { name = "matplotlib", marker = "extra == 'analysis'", specifier = ">=3.10.8" },
     { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.10.8" },
-    { name = "mlx", marker = "sys_platform == 'darwin' and extra == 'all'", specifier = ">=0.31.0" },
-    { name = "mlx", marker = "sys_platform == 'darwin' and extra == 'dev'", specifier = ">=0.31.0" },
-    { name = "mlx", marker = "sys_platform == 'darwin' and extra == 'mlx'", specifier = ">=0.31.0" },
-    { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'all'", specifier = ">=0.31.0" },
-    { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'dev'", specifier = ">=0.31.0" },
-    { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'mlx'", specifier = ">=0.31.0" },
-    { name = "mlx-lm", marker = "extra == 'all'", specifier = "<0.31.0" },
-    { name = "mlx-lm", marker = "extra == 'dev'", specifier = "<0.31.0" },
-    { name = "mlx-lm", marker = "extra == 'mlx'", specifier = "<0.31.0" },
+    { name = "mlx", marker = "sys_platform == 'darwin' and extra == 'all'", specifier = ">=0.32.2" },
+    { name = "mlx", marker = "sys_platform == 'darwin' and extra == 'dev'", specifier = ">=0.32.2" },
+    { name = "mlx", marker = "sys_platform == 'darwin' and extra == 'mlx'", specifier = ">=0.32.2" },
+    { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'all'", specifier = ">=0.32.2" },
+    { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'dev'", specifier = ">=0.32.2" },
+    { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux' and extra == 'mlx'", specifier = ">=0.32.2" },
+    { name = "mlx-lm", marker = "extra == 'all'", specifier = "<0.32.2" },
+    { name = "mlx-lm", marker = "extra == 'dev'", specifier = "<0.32.2" },
+    { name = "mlx-lm", marker = "extra == 'mlx'", specifier = "<0.32.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.1" },
     { name = "numpy", specifier = ">=2.4.3" },
     { name = "pydantic", specifier = ">=2.12.5" },
@@ -822,9 +822,9 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "tqdm", specifier = ">=4.67.3" },
-    { name = "transformers", marker = "extra == 'all'", specifier = ">=5.3.0" },
-    { name = "transformers", marker = "extra == 'dev'", specifier = ">=5.3.0" },
-    { name = "transformers", marker = "extra == 'http'", specifier = ">=5.3.0" },
+    { name = "transformers", marker = "extra == 'all'", specifier = ">=5.7.0" },
+    { name = "transformers", marker = "extra == 'dev'", specifier = ">=5.7.0" },
+    { name = "transformers", marker = "extra == 'http'", specifier = ">=5.7.0" },
 ]
 provides-extras = ["all", "analysis", "dev", "http", "mlx"]
 
