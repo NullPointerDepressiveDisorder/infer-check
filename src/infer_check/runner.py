@@ -588,6 +588,9 @@ class TestRunner:
             if backend_a.supports_scoring:
                 progress.update(task, description=f"[cyan]Scoring reference ({label_a})...")
             refs = await self._reference_scores(backend_a, prompts, results_a)
+            # A isn't needed again. Free it before B loads, so peak memory is
+            # one model rather than both (two bf16 12B models exceed 48 GB).
+            await backend_a.cleanup()
 
             # ── Pass 2: generate from model B ────────────────────────
             progress.update(task, description=f"[cyan]Generating from {label_b}...")
@@ -649,8 +652,7 @@ class TestRunner:
 
         self._drop_distributions(comparisons)
 
-        # ── Cleanup ──────────────────────────────────────────────────
-        await backend_a.cleanup()
+        # ── Cleanup (A was freed after its reference scores) ────────
         await backend_b.cleanup()
 
         # ── Checkpoint ───────────────────────────────────────────────

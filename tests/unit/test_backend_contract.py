@@ -82,6 +82,24 @@ def test_mlx_fingerprint_identifies_the_vocabulary() -> None:
     assert a.tokenizer_fingerprint == fp
 
 
+def test_mlx_fingerprint_survives_cleanup_when_never_read() -> None:
+    """sweep frees its baseline before anything reads the fingerprint.
+
+    If cleanup() dropped the tokenizer first, the fingerprint would be None
+    ("can't tell") and models with different tokenizers would be compared.
+    """
+    import asyncio
+
+    from infer_check.runner import tokenizers_conflict
+
+    a, b = MLXBackend(model_id="org/model"), MLXBackend(model_id="org/other")
+    a._tokenizer = _Tok({"hello": 0, "world": 1})
+    b._tokenizer = _Tok({"hello": 0, "there": 1})
+    asyncio.run(a.cleanup())
+    assert a.tokenizer_fingerprint is not None
+    assert tokenizers_conflict(a, b)
+
+
 @pytest.mark.parametrize(PARAMS, [b for b in BACKENDS if b[0] is not MLXBackend])
 def test_http_backends_report_unknown_fingerprint(
     cls: type, kwargs: dict[str, str], concurrent: bool, scoring: bool

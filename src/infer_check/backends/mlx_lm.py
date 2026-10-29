@@ -139,10 +139,21 @@ class MLXBackend(BackendAdapter):
             return False
 
     async def cleanup(self) -> None:
-        """Release model references and trigger garbage collection."""
+        """Release the model and its memory, keeping the tokenizer fingerprint.
+
+        sweep and compare free a model before they compare tokenizers. Reading
+        the fingerprint here computes it if nothing has yet: otherwise it would
+        be None ("can't tell"), and mismatched token IDs would get through.
+        """
+        _ = self.tokenizer_fingerprint
         self._model = None
         self._tokenizer = None
         await asyncio.to_thread(gc.collect)
+        try:
+            import mlx.core as mx
+        except ImportError:
+            return
+        mx.clear_cache()  # hand freed buffers back instead of keeping them cached
 
     # ------------------------------------------------------------------
     # Internal helpers

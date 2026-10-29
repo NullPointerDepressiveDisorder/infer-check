@@ -346,6 +346,25 @@ class TestCompareRunner:
         backend_a.cleanup.assert_awaited_once()
         backend_b.cleanup.assert_awaited_once()
 
+    def test_a_freed_before_b_generates(self, test_runner: TestRunner) -> None:
+        """Peak memory is one model: A is released before B's first generation."""
+        prompts = _make_prompts(2)
+        resp = {p.id: "ok" for p in prompts}
+        backend_a = self._make_mock_backend("a", resp)
+        backend_b = self._make_mock_backend("b", resp)
+        events: list[str] = []
+        backend_a.cleanup = AsyncMock(side_effect=lambda: events.append("a.cleanup"))
+        generate_b = backend_b.generate
+
+        async def _generate_b(prompt: Prompt) -> InferenceResult:
+            events.append("b.generate")
+            return await generate_b(prompt)
+
+        backend_b.generate = _generate_b
+        asyncio.run(test_runner.compare(backend_a=backend_a, backend_b=backend_b, prompts=prompts))
+        assert events[0] == "a.cleanup"
+        assert events.count("a.cleanup") == 1
+
     def test_checkpoint_written(self, test_runner: TestRunner, tmp_path: Path) -> None:
         """A checkpoint file is written to cache_dir."""
         prompts = _make_prompts(1)
