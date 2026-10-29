@@ -7,7 +7,13 @@ from typing import Any
 
 from rich.progress import Progress
 
-from infer_check.analysis.divergence import KLStats, aggregate_kl, prefix_kl, teacher_forced_kl
+from infer_check.analysis.divergence import (
+    KLStats,
+    aggregate_kl,
+    divergence_is_near_tie,
+    prefix_kl,
+    teacher_forced_kl,
+)
 from infer_check.backends.base import BackendAdapter
 from infer_check.errors import ErrorLog
 from infer_check.types import (
@@ -101,14 +107,28 @@ def correctness_summary(comparisons: list[ComparisonResult]) -> dict[str, Any] |
     return paired_correctness(pairs)
 
 
+def has_token_info(r: InferenceResult) -> bool:
+    """Whether ``r`` carries the model's tokens.
+
+    A server that returns no log-probs gives text only (``tokens`` is empty), so
+    token positions can't be compared. An empty output trivially has its tokens.
+    """
+    return r.token_ids is not None or bool(r.tokens) or not r.text
+
+
 def first_divergence(a: InferenceResult, b: InferenceResult) -> int | None:
-    """Index of the first token where two generations differ, or None if identical.
+    """Index of the first token where two generations differ.
+
+    None if they are identical, or if either side has no tokens to compare (see
+    ``has_token_info``); then only the text can be compared.
 
     Compares token IDs when both results have them (exact). Otherwise falls
     back to per-token display strings, which can split multi-byte characters
     and so over-report divergence. If one sequence is a prefix of the other,
     the divergence index is the shorter length.
     """
+    if not (has_token_info(a) and has_token_info(b)):
+        return None
     seq_a: list[int] | list[str]
     seq_b: list[int] | list[str]
     if a.token_ids is not None and b.token_ids is not None:
@@ -260,6 +280,16 @@ class TestRunner:
           - moderate:   similarity >= 0.5
           - severe:     similarity < 0.5
 
+        Text is compared exactly. ``metadata["whitespace_only"]`` additionally
+        marks outputs that differ only in leading or trailing whitespace, which
+        servers often strip (e.g. a final space token at the length limit). Both
+        are reported, like exact and quasi-exact match in HELM; token IDs, when
+        both sides have them, are what decides whether generation diverged.
+
+        ``metadata["near_tie"]`` says whether the first divergence is a near-tie
+        (each side's token in the other's top-K, as in vLLM's correctness tests),
+        or None when that can't be checked. See ``divergence_is_near_tie``.
+
         KL: pass teacher-forced ``kl`` stats when both backends could score the
         baseline's tokens. Otherwise an approximate prefix KL is computed from
         the stored top-K distributions (see ``prefix_kl``).
@@ -271,6 +301,7 @@ class TestRunner:
             text_similarity = matcher.ratio()
 
         is_failure = text_similarity < threshold
+        whitespace_only = text_similarity < 1.0 and baseline.text.strip() == test.text.strip()
 
         # Severity tiers
         if text_similarity == 1.0:
@@ -284,6 +315,7 @@ class TestRunner:
 
         # Token IDs are only comparable when both sides share a tokenizer.
         token_divergence_index = first_divergence(baseline, test) if token_level else None
+        near_tie = divergence_is_near_tie(baseline, test, token_divergence_index) if token_level else None
         if not token_level:
             kl = None
         elif kl is None:
@@ -307,6 +339,8 @@ class TestRunner:
             else None,
             metadata={
                 "severity": severity,
+                "whitespace_only": whitespace_only,
+                "near_tie": near_tie,
                 "prompt_text": baseline.metadata.get("prompt_text"),
                 "prompt_category": baseline.metadata.get("prompt_category"),
                 "category": baseline.metadata.get("prompt_category") or baseline.metadata.get("category"),
@@ -943,6 +977,8 @@ class TestRunner:
                     else:
                         div_idx = first_divergence(first, r)
                         if div_idx is None:
+                            if not (has_token_info(first) and has_token_info(r)):
+                                continue  # text-only server: the position is unknown
                             # Same tokens but different text shouldn't happen; record the
                             # end of the sequence rather than dropping the divergence.
                             div_idx = len(first.token_ids or first.tokens)

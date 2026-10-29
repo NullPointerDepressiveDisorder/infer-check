@@ -21,7 +21,7 @@ def test_generate_chat_success() -> None:
     with patch("httpx.AsyncClient.post", return_value=mock_response):
         res = asyncio.run(backend.generate(prompt))
         assert res.text == "world"
-        assert res.tokens == ["world"]
+        assert res.tokens == []  # no log-probs: text only, not word-split tokens
         assert res.logprobs is None
 
 
@@ -110,7 +110,7 @@ def test_generate_chat_reasoning_fallback() -> None:
     with patch("httpx.AsyncClient.post", return_value=mock_response):
         res = asyncio.run(backend.generate(prompt))
         assert res.text == "Thinking... world"
-        assert res.tokens == ["Thinking...", "world"]
+        assert res.tokens == []  # no log-probs: text only, not word-split tokens
 
     # Content missing, reasoning_content present
     mock_response = httpx.Response(
@@ -125,7 +125,7 @@ def test_generate_chat_reasoning_fallback() -> None:
     with patch("httpx.AsyncClient.post", return_value=mock_response):
         res = asyncio.run(backend.generate(prompt))
         assert res.text == "Just thinking"
-        assert res.tokens == ["Just", "thinking"]
+        assert res.tokens == []  # no log-probs: text only, not word-split tokens
 
 
 def test_generate_chat_with_logprobs() -> None:

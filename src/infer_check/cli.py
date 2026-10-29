@@ -881,6 +881,23 @@ def diff(
         )
 
     console.print(table)
+    for backend_name, comps in groups.items():
+        identical = sum(1 for c in comps if c.text_similarity == 1.0)
+        whitespace_only = sum(1 for c in comps if c.metadata.get("whitespace_only"))
+        line = f"{backend_name}: {identical}/{len(comps)} identical"
+        if whitespace_only:
+            line += f", {whitespace_only} more differ only in leading or trailing whitespace (servers often strip it)"
+        console.print(line)
+        diverged = [c for c in comps if c.text_similarity < 1.0 and not c.metadata.get("whitespace_only")]
+        if diverged:
+            ties = sum(1 for c in diverged if c.metadata.get("near_tie") is True)
+            unexplained = sum(1 for c in diverged if c.metadata.get("near_tie") is False)
+            unknown = len(diverged) - ties - unexplained
+            parts = [f"{ties} at near-ties (each side's token in the other's top-K)"]
+            parts.append(f"[{'red' if unexplained else 'green'}]{unexplained} not near-ties[/]")
+            if unknown:
+                parts.append(f"{unknown} can't be checked (no token IDs or top-K on one side)")
+            console.print(f"  {len(diverged)} diverged: " + ", ".join(parts))
     _print_correctness_by_group({name: correctness_summary(comps) for name, comps in groups.items()}, "test_backend")
     _report_errors(runner.errors.errors, allow_failures)
 
@@ -1024,7 +1041,8 @@ def stress(
         dt.add_column("first differing token", justify="right")
         dt.add_column("sent with")
         for level, d in diverged[:30]:
-            dt.add_row(str(level), d["prompt_id"], str(d["first_divergence"]), ", ".join(d["co_scheduled"][:4]))
+            pos = d["first_divergence"]
+            dt.add_row(str(level), d["prompt_id"], "n/a" if pos is None else str(pos), ", ".join(d["co_scheduled"][:4]))
         console.print(dt)
         if len(diverged) > 30:
             console.print(f"[dim]... and {len(diverged) - 30} more (see the results file).[/dim]")

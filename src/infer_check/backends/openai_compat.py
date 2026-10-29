@@ -7,6 +7,7 @@ Works with any server that implements the ``/v1/completions`` endpoint
 from __future__ import annotations
 
 import math
+import re
 import time
 from typing import Any
 
@@ -19,6 +20,61 @@ from infer_check.backends import http
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt, normalize_finish_reason, strip_thinking_tokens
+
+# Special tokens render as their literal names, e.g. "<|eot_id|>", "</s>", "<end_of_turn>".
+_SPECIAL_TOKEN = re.compile(r"^<[^<>\s]+>$")
+
+
+def _finite(raw: Any) -> float:
+    """A log-prob as a float; missing, invalid or NaN becomes -9999.0."""
+    try:
+        value = float(raw) if raw is not None else float("nan")
+    except (TypeError, ValueError):
+        return -9999.0
+    return -9999.0 if math.isnan(value) else value
+
+
+def parse_content_logprobs(
+    content: list[dict[str, Any]], text: str, finish_reason: str | None
+) -> tuple[list[str], list[int] | None, list[float], list[list[float]], list[dict[str, int | str]]]:
+    """Parse OpenAI-style ``logprobs.content`` into tokens, IDs, log-probs and top-K lists.
+
+    Uses token IDs when the server includes them (mlx_lm.server does; the OpenAI
+    spec doesn't). Then token comparisons are exact, and the top-K lists are keyed
+    by ID like the in-process backend's, so prefix KL can be computed. Token
+    strings alone can be raw vocabulary pieces ("Ġdetermine" for " determine").
+
+    Drops a trailing end-of-sequence entry that some servers report for a stopped
+    output (mlx_lm.server includes "<|eot_id|>"). It isn't part of the text and the
+    in-process backend doesn't record it, so keeping it would make identical
+    outputs differ at their last token.
+
+    Returns:
+        ``(tokens, token_ids or None, logprobs, distributions, distribution_metadata)``.
+    """
+    if content and finish_reason == "stop":
+        last = str(content[-1].get("token", ""))
+        if _SPECIAL_TOKEN.match(last) and not text.endswith(last):
+            content = content[:-1]
+    tokens = [str(entry.get("token", "")) for entry in content]
+    ids = [entry.get("id") for entry in content]
+    token_ids = (
+        [int(i) for i in ids if isinstance(i, int)] if content and all(isinstance(i, int) for i in ids) else None
+    )
+    logprobs = [_finite(entry.get("logprob")) for entry in content]
+    distributions: list[list[float]] = []
+    metadata: list[dict[str, int | str]] = []
+    for entry in content:
+        top = entry.get("top_logprobs") or []
+        by_id = bool(top) and all(isinstance(item.get("id"), int) for item in top)
+        keyed: list[tuple[int | str, float]] = [
+            (int(item["id"]) if by_id else str(item.get("token", "")), _finite(item.get("logprob"))) for item in top
+        ]
+        keyed.sort(key=lambda kv: (str(type(kv[0])), kv[0]))  # deterministic order
+        distributions.append([lp for _, lp in keyed])
+        metadata.append({f"id_{i}": key for i, (key, _) in enumerate(keyed)})
+    return tokens, token_ids, logprobs, distributions, metadata
+
 
 __all__ = ["OpenAICompatBackend"]
 
@@ -74,6 +130,7 @@ class OpenAICompatBackend(BackendAdapter):
 
         # Logprobs support: assume yes until a server rejects it.
         self._chat_logprobs_supported: bool = True
+        self._warned_no_logprobs = False
         # Thinking-disable keys are opportunistic: most servers accept them,
         # some reject unknown params with 400/422. We drop them on first failure.
         self._thinking_keys_supported: bool = True
@@ -115,6 +172,23 @@ class OpenAICompatBackend(BackendAdapter):
     ) -> TokenScores:
         raise NotImplementedError(
             f"{self.name} backend does not support teacher-forced scoring; comparisons fall back to prefix KL."
+        )
+
+    def _warn_no_logprobs(self) -> None:
+        """Say once that this server returned text only.
+
+        Some servers reject log-probs (handled by retrying without them); others,
+        such as vllm-mlx 0.6, accept the request and silently return none.
+        Either way, comparisons with this server can't be token-level.
+        """
+        if self._warned_no_logprobs:
+            return
+        self._warned_no_logprobs = True
+        from rich.console import Console
+
+        Console().print(
+            f"[yellow]  ⚠ {self.name} at {self._base_url} returned no log-probs, so comparisons with it are "
+            "text-only: no token-level divergence and no KL.[/yellow]"
         )
 
     async def generate(self, prompt: Prompt) -> InferenceResult:
@@ -228,53 +302,23 @@ class OpenAICompatBackend(BackendAdapter):
 
         # Parse logprobs (chat completions format) -------------------------
         tokens: list[str] = []
+        token_ids: list[int] | None = None
         logprobs_list: list[float] | None = None
         distributions: list[list[float]] | None = None
         distribution_metadata: list[dict[str, int | str]] | None = None
+        finish_reason = normalize_finish_reason(choice.get("finish_reason"))
 
         lp_data = choice.get("logprobs")
         if lp_data and lp_data.get("content"):
-            content_logprobs = lp_data["content"]
-            tokens = [entry.get("token", "") for entry in content_logprobs]
-            logprobs_list = []
-            for entry in content_logprobs:
-                raw = entry.get("logprob")
-                try:
-                    fv = float(raw) if raw is not None else -9999.0
-                except (TypeError, ValueError):
-                    fv = -9999.0
-                if math.isnan(fv):
-                    fv = -9999.0
-                logprobs_list.append(fv)
-
-            distributions = []
-            distribution_metadata = []
-            for entry in content_logprobs:
-                top = entry.get("top_logprobs", [])
-                if not top:
-                    distributions.append([])
-                    distribution_metadata.append({})
-                    continue
-                sorted_items = sorted(top, key=lambda x: x.get("token", ""))
-                cleaned: list[tuple[str, float]] = []
-                for item in sorted_items:
-                    try:
-                        fv = float(item["logprob"]) if item.get("logprob") is not None else -9999.0
-                    except (TypeError, ValueError):
-                        fv = -9999.0
-                    if math.isnan(fv):
-                        fv = -9999.0
-                    cleaned.append((item.get("token", ""), fv))
-                distributions.append([fv for _, fv in cleaned])
-                meta: dict[str, int | str] = {}
-                for i, (tok, _) in enumerate(cleaned):
-                    meta[f"id_{i}"] = tok
-                distribution_metadata.append(meta)
+            tokens, token_ids, logprobs_list, distributions, distribution_metadata = parse_content_logprobs(
+                lp_data["content"], text, finish_reason
+            )
         else:
-            tokens = text.split()
+            tokens = []  # text only: splitting it into words would not give the model's tokens
+            self._warn_no_logprobs()
 
         usage = data.get("usage") or {}
-        completion_tokens = usage.get("completion_tokens", len(tokens))
+        completion_tokens = usage.get("completion_tokens", len(tokens) or None)
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
         return InferenceResult(
@@ -282,6 +326,7 @@ class OpenAICompatBackend(BackendAdapter):
             backend_name=self.name,
             model_id=self._model_id,
             tokens=tokens,
+            token_ids=token_ids,
             logprobs=logprobs_list,
             distributions=distributions,
             distribution_metadata=distribution_metadata,
@@ -289,7 +334,7 @@ class OpenAICompatBackend(BackendAdapter):
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
             metadata={
-                "finish_reason": normalize_finish_reason(choice.get("finish_reason")),
+                "finish_reason": finish_reason,
                 "prompt_tokens": usage.get("prompt_tokens"),
             },
         )
@@ -387,9 +432,10 @@ class OpenAICompatBackend(BackendAdapter):
                     meta[f"id_{i}"] = tok
                 distribution_metadata.append(meta)
         else:
-            tokens = text.split()
+            tokens = []  # text only: splitting it into words would not give the model's tokens
+            self._warn_no_logprobs()
 
-        completion_tokens = data.get("eval_count", len(tokens))
+        completion_tokens = data.get("eval_count", len(tokens) or None)
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
         return InferenceResult(
@@ -470,12 +516,19 @@ class OpenAICompatBackend(BackendAdapter):
 
         # Parse logprobs ---------------------------------------------------
         tokens: list[str] = []
+        token_ids: list[int] | None = None
         logprobs_list: list[float] | None = None
         distributions: list[list[float]] | None = None
         distribution_metadata: list[dict[str, int | str]] | None = None
+        finish_reason = normalize_finish_reason(choice.get("finish_reason"))
 
         lp_data = choice.get("logprobs")
-        if lp_data and lp_data.get("tokens"):
+        if lp_data and isinstance(lp_data.get("content"), list) and lp_data["content"]:
+            # mlx_lm.server answers /v1/completions in the chat-style format.
+            tokens, token_ids, logprobs_list, distributions, distribution_metadata = parse_content_logprobs(
+                lp_data["content"], text, finish_reason
+            )
+        elif lp_data and lp_data.get("tokens"):
             tokens = lp_data["tokens"]
             raw_logprobs = lp_data.get("token_logprobs", [])
             logprobs_list = [float(v) if v is not None and not math.isnan(v) else -9999.0 for v in raw_logprobs]
@@ -508,11 +561,12 @@ class OpenAICompatBackend(BackendAdapter):
                         meta[f"id_{i}"] = tok
                     distribution_metadata.append(meta)
         else:
-            tokens = text.split()
+            tokens = []  # text only: splitting it into words would not give the model's tokens
+            self._warn_no_logprobs()
 
         # Timing -----------------------------------------------------------
         usage = data.get("usage") or {}
-        completion_tokens = usage.get("completion_tokens", len(tokens))
+        completion_tokens = usage.get("completion_tokens", len(tokens) or None)
         tps = completion_tokens / elapsed_s if elapsed_s > 0 and completion_tokens else None
 
         return InferenceResult(
@@ -520,6 +574,7 @@ class OpenAICompatBackend(BackendAdapter):
             backend_name=self.name,
             model_id=self._model_id,
             tokens=tokens,
+            token_ids=token_ids,
             logprobs=logprobs_list,
             distributions=distributions,
             distribution_metadata=distribution_metadata,
@@ -527,7 +582,7 @@ class OpenAICompatBackend(BackendAdapter):
             latency_ms=elapsed_s * 1000,
             tokens_per_second=tps,
             metadata={
-                "finish_reason": normalize_finish_reason(choice.get("finish_reason")),
+                "finish_reason": finish_reason,
                 "prompt_tokens": usage.get("prompt_tokens"),
             },
         )

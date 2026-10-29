@@ -176,6 +176,32 @@ def prefix_kl(baseline: InferenceResult, test: InferenceResult, divergence_index
     return KLStats.from_per_token("prefix", np.array(per_token), float(np.mean(agree)))
 
 
+def divergence_is_near_tie(baseline: InferenceResult, test: InferenceResult, index: int | None) -> bool | None:
+    """Whether the first divergence is a near-tie, by vLLM's ``check_logprobs_close`` test.
+
+    At the first differing token, each side's choice must be in the other side's
+    top-K. Two numerically different but correct paths (another kernel, a batched
+    or cached decode) only flip where two tokens are nearly tied, and this accepts
+    exactly that. A choice the other side didn't rank in its top-K points to a
+    real difference.
+
+    Returns None when it can't be checked: no divergence, or token IDs or top-K
+    lists missing on either side at that position (e.g. one side stopped there).
+    """
+    if index is None:
+        return None
+    b_ids, t_ids = baseline.token_ids, test.token_ids
+    b_meta, t_meta = baseline.distribution_metadata, test.distribution_metadata
+    if not (b_ids and t_ids and b_meta and t_meta):
+        return None
+    if index >= min(len(b_ids), len(t_ids), len(b_meta), len(t_meta)):
+        return None
+    b_top, t_top = set(b_meta[index].values()), set(t_meta[index].values())
+    if not b_top or not t_top or {type(k) for k in b_top} != {type(k) for k in t_top}:
+        return None
+    return t_ids[index] in b_top and b_ids[index] in t_top
+
+
 def aggregate_kl(comparisons: list[ComparisonResult]) -> dict[str, Any]:
     """Pool per-token KL across comparisons without mixing methods.
 
