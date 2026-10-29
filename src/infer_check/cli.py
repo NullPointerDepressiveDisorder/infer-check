@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -15,6 +15,45 @@ from rich.console import Console
 from rich.table import Table
 
 console = Console()
+
+
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
+    """Run a command's coroutine. A run stopped by a systemic error exits 1."""
+    from infer_check.errors import RunAbortedError
+
+    try:
+        return asyncio.run(coro)
+    except RunAbortedError as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        console.print("[red]Nothing from the stopped run was saved. Fix the cause and rerun.[/red]")
+        raise SystemExit(1) from None
+
+
+def _report_errors(errors: list[Any], allow_failures: bool) -> None:
+    """List prompts that failed after the results; exit 1 unless failures are allowed."""
+    if not errors:
+        return
+    from collections import defaultdict
+
+    by_label: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for e in errors:
+        by_label[(e.label, e.stage)].append(e.prompt_id)
+    table = Table(title="Errors (these prompts are missing from the results above)")
+    table.add_column("label")
+    table.add_column("stage")
+    table.add_column("count", justify="right")
+    table.add_column("prompts")
+    for (label, stage), ids in by_label.items():
+        shown = ", ".join(ids[:5]) + (f", ... ({len(ids) - 5} more)" if len(ids) > 5 else "")
+        table.add_row(label, stage, str(len(ids)), shown)
+    console.print(table)
+    console.print(
+        f"[yellow]{len(errors)} error(s). Rerun these prompts before publishing these results: "
+        "errors are not random (looping models fail most), so leaving them out flatters the damaged side.[/yellow]"
+    )
+    if not allow_failures:
+        console.print("[red]Exiting with status 1. Pass --allow-failures to accept the errors.[/red]")
+        raise SystemExit(1)
 
 
 def common_options[F: Callable[..., Any]](f: F) -> F:
@@ -53,6 +92,15 @@ def common_options[F: Callable[..., Any]](f: F) -> F:
                 "Use /v1/chat/completions for HTTP backends (applies chat "
                 "template server-side). Pass --no-chat to use raw "
                 "/v1/completions instead. Ignored for mlx-lm."
+            ),
+        ),
+        click.option(
+            "--allow-failures",
+            is_flag=True,
+            default=False,
+            help=(
+                "Exit 0 even if some prompts failed to generate or score. They are "
+                "still listed, and missing from the results, either way."
             ),
         ),
     ]
@@ -180,6 +228,7 @@ def sweep(
     num_prompts: int | None,
     disable_thinking: bool,
     chat: bool,
+    allow_failures: bool,
 ) -> None:
     """Run a quantization sweep: compare pre-quantized models against a baseline.
 
@@ -240,7 +289,7 @@ def sweep(
         )
 
     runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
-    result = asyncio.run(
+    result = _run(
         runner.sweep(
             backend_map=backend_map,
             prompts=prompt_list,
@@ -338,6 +387,7 @@ def sweep(
             f"loss vs. the baseline ({cliff['regressions']} regressions vs {cliff['improvements']} improvements, "
             f"exact McNemar p = {cliff['mcnemar_p']:.2g})."
         )
+    _report_errors(result.errors, allow_failures)
 
 
 def _fmt_acc(side: dict[str, Any]) -> str:
@@ -478,6 +528,7 @@ def compare(
     num_prompts: int | None,
     disable_thinking: bool,
     chat: bool,
+    allow_failures: bool,
 ) -> None:
     """Compare two quantizations of the same model.
 
@@ -545,7 +596,7 @@ def compare(
 
     # ── Run comparison ───────────────────────────────────────────────
     runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
-    compare_result = asyncio.run(
+    compare_result = _run(
         runner.compare(
             backend_a=backend_a,
             backend_b=backend_b,
@@ -692,6 +743,7 @@ def compare(
         console.print(f"[green]HTML report generated at {report_path}[/green]")
     elif n > 0 and not flipped:
         console.print("[bold green]No answer flips detected.[/bold green]")
+    _report_errors(compare_result.errors, allow_failures)
 
 
 # ---------------------------------------------------------------------------
@@ -738,6 +790,7 @@ def diff(
     num_prompts: int | None,
     disable_thinking: bool,
     chat: bool,
+    allow_failures: bool,
 ) -> None:
     """Compare outputs across different backends for the same model and prompts."""
     from infer_check.backends.base import BackendConfig, get_backend
@@ -776,7 +829,7 @@ def diff(
     test_backends = backend_instances[1:]
 
     runner = TestRunner(keep_distributions=ctx.obj.get("keep_distributions", False))
-    comparisons = asyncio.run(
+    comparisons = _run(
         runner.diff(
             baseline_backend=baseline_backend,
             test_backends=test_backends,
@@ -829,6 +882,7 @@ def diff(
 
     console.print(table)
     _print_correctness_by_group({name: correctness_summary(comps) for name, comps in groups.items()}, "test_backend")
+    _report_errors(runner.errors.errors, allow_failures)
 
 
 # ---------------------------------------------------------------------------
@@ -882,6 +936,7 @@ def stress(
     num_prompts: int | None,
     disable_thinking: bool,
     chat: bool,
+    allow_failures: bool,
 ) -> None:
     """Check that outputs don't change with what else the server is processing.
 
@@ -916,7 +971,7 @@ def stress(
         )
 
     runner = TestRunner()
-    stress_results = asyncio.run(
+    stress_results = _run(
         runner.stress(
             backend=backend_instance,
             prompts=prompt_list,
@@ -973,6 +1028,7 @@ def stress(
         console.print(dt)
         if len(diverged) > 30:
             console.print(f"[dim]... and {len(diverged) - 30} more (see the results file).[/dim]")
+    _report_errors(runner.errors.errors, allow_failures)
 
 
 # ---------------------------------------------------------------------------
@@ -1011,6 +1067,7 @@ def determinism(
     num_prompts: int | None,
     disable_thinking: bool,
     chat: bool,
+    allow_failures: bool,
 ) -> None:
     """Test whether a backend produces identical outputs across repeated runs at temperature=0."""
     from infer_check.backends.base import get_backend_for_model
@@ -1029,7 +1086,7 @@ def determinism(
     console.print(f"[bold cyan]determinism[/bold cyan] model={model} backend={backend_instance.name} runs={runs}")
 
     runner = TestRunner()
-    det_results = asyncio.run(
+    det_results = _run(
         runner.determinism(
             backend=backend_instance,
             prompts=prompt_list,
@@ -1072,6 +1129,7 @@ def determinism(
         console.print(
             f"\n[bold]Overall determinism score:[/bold] [{'green' if overall == 1.0 else 'yellow'}]{overall:.2%}[/]"
         )
+    _report_errors(runner.errors.errors, allow_failures)
 
 
 # ---------------------------------------------------------------------------

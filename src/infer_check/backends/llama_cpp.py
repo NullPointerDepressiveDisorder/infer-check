@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 
 from infer_check.analysis.scoring import model_input
+from infer_check.backends import http
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt, normalize_finish_reason
@@ -94,8 +95,7 @@ class LlamaCppBackend(BackendAdapter):
 
         start = time.perf_counter()
         try:
-            response = await self._client.post("/completion", json=payload)
-            response.raise_for_status()
+            response = await http.post(self._client, "/completion", payload)
         except httpx.ConnectError as exc:
             # On Windows, localhost often resolves to IPv6 [::1] which many servers don't bind to.
             # Using 127.0.0.1 (IPv4) is generally more reliable for local connections.

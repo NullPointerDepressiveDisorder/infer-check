@@ -152,6 +152,15 @@ class ComparisonResult(BaseInferModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RunError(BaseInferModel):
+    """A prompt that failed to generate or score. Its comparisons are missing."""
+
+    label: str  # quant level, model or backend that failed
+    prompt_id: str
+    stage: Literal["generate", "score"]
+    error: str
+
+
 class SweepResult(BaseInferModel):
     model_id: str
     backend_name: str
@@ -159,6 +168,7 @@ class SweepResult(BaseInferModel):
     comparisons: list[ComparisonResult]
     timestamp: datetime
     summary: dict[str, Any]
+    errors: list[RunError] = Field(default_factory=list)
 
 
 class StressResult(BaseInferModel):
@@ -215,6 +225,7 @@ class CompareResult(BaseInferModel):
     per_category_stats: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    errors: list[RunError] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)

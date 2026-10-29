@@ -15,6 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 from infer_check.analysis.scoring import model_input
+from infer_check.backends import http
 from infer_check.backends.base import BackendAdapter
 from infer_check.types import InferenceResult, Prompt, TokenScores
 from infer_check.utils import format_prompt, normalize_finish_reason, strip_thinking_tokens
@@ -129,8 +130,7 @@ class OpenAICompatBackend(BackendAdapter):
         """
         start = time.perf_counter()
         try:
-            response = await self._client.post("/v1/chat/completions", json=payload)
-            response.raise_for_status()
+            response = await http.post(self._client, "/v1/chat/completions", payload)
         except httpx.ConnectError as exc:
             raise RuntimeError(
                 f"Cannot connect to server at {self._base_url}. "
@@ -321,8 +321,7 @@ class OpenAICompatBackend(BackendAdapter):
 
         start = time.perf_counter()
         try:
-            response = await self._client.post("/api/chat", json=payload)
-            response.raise_for_status()
+            response = await http.post(self._client, "/api/chat", payload)
         except httpx.ConnectError as exc:
             raise RuntimeError(
                 f"Cannot connect to Ollama at {self._base_url}. Ensure `ollama serve` is running."
@@ -429,8 +428,7 @@ class OpenAICompatBackend(BackendAdapter):
 
         start = time.perf_counter()
         try:
-            response = await self._client.post("/v1/completions", json=payload)
-            response.raise_for_status()
+            response = await http.post(self._client, "/v1/completions", payload)
         except httpx.ConnectError as exc:
             raise RuntimeError(
                 f"Cannot connect to OpenAI-compatible server at {self._base_url}. "

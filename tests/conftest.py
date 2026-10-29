@@ -39,3 +39,9 @@ def pytest_configure(config: object) -> None:
     except ImportError:
         return
     mx.set_default_device(mx.cpu)
+
+
+@pytest.fixture(autouse=True)
+def _no_http_retry_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the HTTP retries but skip their waits, so error-path tests stay fast."""
+    monkeypatch.setattr("infer_check.backends.http.RETRY_DELAYS", (0.0, 0.0, 0.0))

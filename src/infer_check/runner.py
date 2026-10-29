@@ -9,6 +9,7 @@ from rich.progress import Progress
 
 from infer_check.analysis.divergence import KLStats, aggregate_kl, prefix_kl, teacher_forced_kl
 from infer_check.backends.base import BackendAdapter
+from infer_check.errors import ErrorLog
 from infer_check.types import (
     CompareResult,
     ComparisonResult,
@@ -137,6 +138,7 @@ class TestRunner:
         """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.errors = ErrorLog()  # replaced at the start of each run
         self.keep_distributions = keep_distributions
         self._tokenizer_warned: set[tuple[int, int]] = set()
 
@@ -316,6 +318,7 @@ class TestRunner:
         backend: BackendAdapter,
         prompts: list[Prompt],
         results: dict[str, InferenceResult],
+        label: str,
     ) -> dict[str, TokenScores]:
         """Score each baseline result's own tokens with the baseline model.
 
@@ -333,7 +336,9 @@ class TestRunner:
             try:
                 refs[prompt.id] = await backend.score(prompt, res.token_ids, top_k=REFERENCE_TOP_K)
             except Exception as exc:
-                _warn(f"Reference scoring failed for '{prompt.id}' on {backend.name}: {exc}")
+                self.errors.record(label, prompt.id, exc, stage="score")
+                continue
+            self.errors.ok()
         return refs
 
     async def _teacher_forced(
@@ -343,6 +348,8 @@ class TestRunner:
         baseline: InferenceResult,
         ref: TokenScores | None,
         token_level: bool = True,
+        *,
+        label: str,
     ) -> KLStats | None:
         """Score the baseline's tokens with ``backend`` and compare against ``ref``.
 
@@ -356,8 +363,9 @@ class TestRunner:
         try:
             scores = await backend.score(prompt, baseline.token_ids, top_k=0, at_ids=ref.top_ids)
         except Exception as exc:
-            _warn(f"Teacher-forced scoring failed for '{prompt.id}' on {backend.name}: {exc}")
+            self.errors.record(label, prompt.id, exc, stage="score")
             return None
+        self.errors.ok()
         return teacher_forced_kl(ref, scores)
 
     async def sweep(
@@ -378,6 +386,7 @@ class TestRunner:
             model_id: Identifier for the model family (used in results metadata).
             baseline_quant: Which label is the baseline. Defaults to first in list.
         """
+        self.errors = ErrorLog()
         baseline_results: dict[str, InferenceResult] = {}
         all_comparisons: list[ComparisonResult] = []
         failure_counts: dict[str, int] = dict.fromkeys(quantization_levels, 0)
@@ -399,14 +408,11 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await baseline_backend.generate(prompt)
+                    self.errors.ok()
                     res.metadata["prompt_text"] = prompt.text
                     res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
-                    from rich.console import Console
-
-                    Console().print(
-                        f"[yellow]  ⚠ Skipping prompt '{prompt.text[:60]}...' at {baseline_quant}: {exc}[/yellow]"
-                    )
+                    self.errors.record(baseline_quant, prompt.id, exc)
                     progress.advance(task)
                     continue
                 if not res.quantization:
@@ -417,7 +423,7 @@ class TestRunner:
             # ---- Reference scores for teacher-forced KL (baseline still loaded) ----
             if baseline_backend.supports_scoring:
                 progress.update(task, description=f"[cyan]Scoring baseline reference ({baseline_quant})...")
-            refs = await self._reference_scores(baseline_backend, prompts, baseline_results)
+            refs = await self._reference_scores(baseline_backend, prompts, baseline_results, baseline_quant)
 
             # ---- Baseline pass 2: self-check for determinism ----
             progress.update(task, description=f"[cyan]Baseline self-check ({baseline_quant})...")
@@ -427,12 +433,11 @@ class TestRunner:
                     continue
                 try:
                     res2 = await baseline_backend.generate(prompt)
+                    self.errors.ok()
                     res2.metadata["prompt_text"] = prompt.text
                     res2.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
-                    from rich.console import Console
-
-                    Console().print(f"[yellow]  ⚠ Self-check failed for '{prompt.text[:60]}...': {exc}[/yellow]")
+                    self.errors.record(baseline_quant, prompt.id, exc)
                     progress.advance(task)
                     continue
                 if not res2.quantization:
@@ -440,7 +445,9 @@ class TestRunner:
                 ref_res = baseline_results[prompt.id]
                 # Re-scoring with the same model should give KL == 0 exactly;
                 # anything else means scoring itself is nondeterministic.
-                kl = await self._teacher_forced(baseline_backend, prompt, ref_res, refs.get(prompt.id))
+                kl = await self._teacher_forced(
+                    baseline_backend, prompt, ref_res, refs.get(prompt.id), label=baseline_quant
+                )
                 comp = self._compare(ref_res, res2, kl=kl)
                 self._annotate_flip_metadata(comp, prompt)
                 comp.metadata["is_self_check"] = True
@@ -462,14 +469,11 @@ class TestRunner:
                 for prompt in prompts:
                     try:
                         res = await backend.generate(prompt)
+                        self.errors.ok()
                         res.metadata["prompt_text"] = prompt.text
                         res.metadata["prompt_category"] = prompt.category
                     except Exception as exc:
-                        from rich.console import Console
-
-                        Console().print(
-                            f"[yellow]  ⚠ Skipping prompt '{prompt.text[:60]}...' at {quant}: {exc}[/yellow]"
-                        )
+                        self.errors.record(quant, prompt.id, exc)
                         progress.advance(task)
                         continue
                     if not res.quantization:
@@ -478,7 +482,7 @@ class TestRunner:
                     baseline = baseline_results.get(res.prompt_id)
                     if baseline:
                         tl = self._token_level(baseline_backend, backend)
-                        kl = await self._teacher_forced(backend, prompt, baseline, refs.get(prompt.id), tl)
+                        kl = await self._teacher_forced(backend, prompt, baseline, refs.get(prompt.id), tl, label=quant)
                         comp = self._compare(baseline, res, kl=kl, token_level=tl)
                         self._annotate_flip_metadata(comp, prompt)
                         all_comparisons.append(comp)
@@ -509,6 +513,8 @@ class TestRunner:
             "quantization_levels": quantization_levels,
             "baseline_quant": baseline_quant,
             "failure_counts": failure_counts,
+            # Prompts that failed to generate or score, per level: missing from the comparisons.
+            "errors": self.errors.counts(),
             "mean_kl_divergence": pooled["mean_kl"],
             "kl_method": pooled["method"],
             "kl_by_quant": kl_by_quant,
@@ -531,6 +537,7 @@ class TestRunner:
             comparisons=all_comparisons,
             timestamp=datetime.now(UTC),
             summary=summary,
+            errors=list(self.errors.errors),
         )
 
     async def compare(
@@ -558,6 +565,7 @@ class TestRunner:
         """
         from collections import defaultdict
 
+        self.errors = ErrorLog()
         results_a: dict[str, InferenceResult] = {}
         results_b: dict[str, InferenceResult] = {}
         comparisons: list[ComparisonResult] = []
@@ -571,12 +579,11 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await backend_a.generate(prompt)
+                    self.errors.ok()
                     res.metadata["prompt_text"] = prompt.text
                     res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
-                    from rich.console import Console
-
-                    Console().print(f"[yellow]  ⚠ {label_a} failed for '{prompt.text[:60]}...': {exc}[/yellow]")
+                    self.errors.record(label_a, prompt.id, exc)
                     progress.advance(task)
                     continue
                 if not res.quantization:
@@ -587,7 +594,7 @@ class TestRunner:
             # ── Reference scores from A (teacher-forced KL) ──────────
             if backend_a.supports_scoring:
                 progress.update(task, description=f"[cyan]Scoring reference ({label_a})...")
-            refs = await self._reference_scores(backend_a, prompts, results_a)
+            refs = await self._reference_scores(backend_a, prompts, results_a, label_a)
             # A isn't needed again. Free it before B loads, so peak memory is
             # one model rather than both (two bf16 12B models exceed 48 GB).
             await backend_a.cleanup()
@@ -597,12 +604,11 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await backend_b.generate(prompt)
+                    self.errors.ok()
                     res.metadata["prompt_text"] = prompt.text
                     res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
-                    from rich.console import Console
-
-                    Console().print(f"[yellow]  ⚠ {label_b} failed for '{prompt.text[:60]}...': {exc}[/yellow]")
+                    self.errors.record(label_b, prompt.id, exc)
                     progress.advance(task)
                     continue
                 if not res.quantization:
@@ -616,7 +622,7 @@ class TestRunner:
             a = results_a.get(prompt.id)
             b = results_b.get(prompt.id)
             if a and b:
-                kl = await self._teacher_forced(backend_b, prompt, a, refs.get(prompt.id), tl)
+                kl = await self._teacher_forced(backend_b, prompt, a, refs.get(prompt.id), tl, label=label_b)
                 comp = self._compare(a, b, kl=kl, token_level=tl)
                 self._annotate_flip_metadata(comp, prompt)
                 comparisons.append(comp)
@@ -678,6 +684,7 @@ class TestRunner:
             mean_top1_agreement=kl_summary["mean_top1_agreement"],
             mean_text_similarity=mean_sim,
             per_category_stats=per_category,
+            errors=list(self.errors.errors),
         )
 
     async def diff(
@@ -687,6 +694,7 @@ class TestRunner:
         prompts: list[Prompt],
     ) -> list[ComparisonResult]:
         """Compare outputs across different backends against a baseline."""
+        self.errors = ErrorLog()
         baseline_results: dict[str, InferenceResult] = {}
         comparisons: list[ComparisonResult] = []
 
@@ -699,12 +707,11 @@ class TestRunner:
             for prompt in prompts:
                 try:
                     res = await baseline_backend.generate(prompt)
+                    self.errors.ok()
                     res.metadata["prompt_text"] = prompt.text
                     res.metadata["prompt_category"] = prompt.category
                 except Exception as exc:
-                    from rich.console import Console
-
-                    Console().print(f"[yellow]  ⚠ Baseline failed for '{prompt.text[:60]}...': {exc}[/yellow]")
+                    self.errors.record(baseline_backend.name, prompt.id, exc)
                     progress.advance(task)
                     continue
                 baseline_results[res.prompt_id] = res
@@ -713,7 +720,7 @@ class TestRunner:
             # Reference scores for teacher-forced KL (only used if a test backend can score too).
             refs: dict[str, TokenScores] = {}
             if any(tb.supports_scoring for tb in test_backends):
-                refs = await self._reference_scores(baseline_backend, prompts, baseline_results)
+                refs = await self._reference_scores(baseline_backend, prompts, baseline_results, baseline_backend.name)
 
             # Test backends pass
             for test_backend in test_backends:
@@ -721,20 +728,19 @@ class TestRunner:
                 for prompt in prompts:
                     try:
                         test_res = await test_backend.generate(prompt)
+                        self.errors.ok()
                         test_res.metadata["prompt_text"] = prompt.text
                         test_res.metadata["prompt_category"] = prompt.category
                     except Exception as exc:
-                        from rich.console import Console
-
-                        Console().print(
-                            f"[yellow]  ⚠ {test_backend.name} failed for '{prompt.text[:60]}...': {exc}[/yellow]"
-                        )
+                        self.errors.record(test_backend.name, prompt.id, exc)
                         progress.advance(task)
                         continue
                     baseline = baseline_results.get(test_res.prompt_id)
                     if baseline:
                         tl = self._token_level(baseline_backend, test_backend)
-                        kl = await self._teacher_forced(test_backend, prompt, baseline, refs.get(prompt.id), tl)
+                        kl = await self._teacher_forced(
+                            test_backend, prompt, baseline, refs.get(prompt.id), tl, label=test_backend.name
+                        )
                         comp = self._compare(baseline, test_res, kl=kl, token_level=tl)
                         self._annotate_flip_metadata(comp, prompt)
                         comparisons.append(comp)
@@ -797,6 +803,7 @@ class TestRunner:
                 "Run stress against an HTTP server (llama-server, vllm-mlx, mlx_lm.server, vLLM, ...)."
             )
         levels = sorted({lvl for lvl in (concurrency_levels or [1, 2, 4, 8]) if lvl >= 1} | {1})
+        self.errors = ErrorLog()
         pool = fillers or prompts
         rng = random.Random(seed)  # nosec B311 - reproducible test sampling, not security
 
@@ -820,7 +827,7 @@ class TestRunner:
                 if isinstance(out, Exception):
                     solo_errors += 1
                     note(solo_messages, out)
-                    _warn(f"Solo run failed for '{prompt.id}': {out}")
+                    self.errors.record("1 in flight", prompt.id, out, streak=False)
                 else:
                     solo[prompt.id] = out
                 progress.advance(task)
@@ -854,10 +861,11 @@ class TestRunner:
                         k = level - 1
                         chosen = rng.sample(others, k) if len(others) >= k else [rng.choice(others) for _ in range(k)]
                         batch = await asyncio.gather(*(self._safe_generate(backend, p) for p in [target, *chosen]))
-                        for o in batch:
+                        for sent, o in zip([target, *chosen], batch, strict=True):
                             if isinstance(o, Exception):
                                 errors += 1
                                 note(messages, o)
+                                self.errors.record(f"{level} in flight", sent.id, o, streak=False)
                         out = batch[0]
                         progress.advance(task)
                         if isinstance(out, Exception):
@@ -896,6 +904,7 @@ class TestRunner:
         self, backend: BackendAdapter, prompts: list[Prompt], num_runs: int = 100
     ) -> list[DeterminismResult]:
         """Test determinism over multiple runs at temperature=0."""
+        self.errors = ErrorLog()
         results: list[DeterminismResult] = []
 
         with Progress() as progress:
@@ -911,14 +920,11 @@ class TestRunner:
                 for _ in range(num_runs):
                     try:
                         res = await backend.generate(prompt)
+                        self.errors.ok()
                         res.metadata["prompt_text"] = prompt.text
                         res.metadata["prompt_category"] = prompt.category
                     except Exception as exc:
-                        from rich.console import Console
-
-                        Console().print(
-                            f"[yellow]  ⚠ Determinism run failed for '{prompt.text[:60]}...': {exc}[/yellow]"
-                        )
+                        self.errors.record(backend.name, prompt.id, exc)
                         progress.advance(task)
                         continue
                     run_results.append(res)
