@@ -888,6 +888,16 @@ def diff(
         if whitespace_only:
             line += f", {whitespace_only} more differ only in leading or trailing whitespace (servers often strip it)"
         console.print(line)
+        mismatched = [c for c in comps if c.metadata.get("prompt_mismatch")]
+        if mismatched:
+            example = mismatched[0]
+            console.print(
+                f"  [bold red]⚠ {len(mismatched)}/{len(comps)} prompts were tokenized to a different length on "
+                f"the two sides (e.g. {example.baseline.prompt_id}: "
+                f"{example.baseline.metadata.get('prompt_tokens')} vs {example.test.metadata.get('prompt_tokens')} "
+                "tokens). The backends saw different prompts, so these outputs aren't comparable: check the chat "
+                "template, system messages and BOS handling.[/bold red]"
+            )
         diverged = [c for c in comps if c.text_similarity < 1.0 and not c.metadata.get("whitespace_only")]
         if diverged:
             ties = sum(1 for c in diverged if c.metadata.get("near_tie") is True)
@@ -896,7 +906,7 @@ def diff(
             parts = [f"{ties} at near-ties (each side's token in the other's top-K)"]
             parts.append(f"[{'red' if unexplained else 'green'}]{unexplained} not near-ties[/]")
             if unknown:
-                parts.append(f"{unknown} can't be checked (no token IDs or top-K on one side)")
+                parts.append(f"{unknown} can't be checked (different prompts, or no token IDs or top-K on one side)")
             console.print(f"  {len(diverged)} diverged: " + ", ".join(parts))
     _print_correctness_by_group({name: correctness_summary(comps) for name, comps in groups.items()}, "test_backend")
     _report_errors(runner.errors.errors, allow_failures)

@@ -125,3 +125,30 @@ def test_compare_records_near_tie_and_prefix_kl(tmp_path: Path, test: InferenceR
     comp = TestRunner(cache_dir=tmp_path)._compare(BASE, test)
     assert comp.metadata["near_tie"] is expected
     assert comp.kl_method == "prefix"  # ID-keyed top-K on both sides now lines up
+
+
+# ── same prompt on both sides ──────────────────────────────────────────
+
+
+def test_chat_request_sends_only_the_user_message() -> None:
+    """No empty system message: Qwen and Gemma render it as 5 extra prompt tokens."""
+    backend = OpenAICompatBackend(base_url="http://127.0.0.1:8080", model_id="m", chat=True, disable_thinking=True)
+    body = {
+        "choices": [{"message": {"content": "The answer"}, "finish_reason": "stop", "logprobs": {"content": CONTENT}}]
+    }
+    with patch("httpx.AsyncClient.post", return_value=_response("/v1/chat/completions", body)) as post:
+        asyncio.run(backend.generate(Prompt(id="p0", text="What is 2+2?")))
+    payload = post.call_args.kwargs["json"]
+    assert payload["messages"] == [{"role": "user", "content": "What is 2+2?"}]
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False, "thinking": False}
+
+
+def test_different_prompt_lengths_are_flagged_and_get_no_near_tie_verdict(tmp_path: Path) -> None:
+    base = BASE.model_copy(update={"metadata": {"prompt_tokens": 31}})
+    same = TIE.model_copy(update={"metadata": {"prompt_tokens": 31}})
+    longer = TIE.model_copy(update={"metadata": {"prompt_tokens": 36}})
+    runner = TestRunner(cache_dir=tmp_path)
+    ok = runner._compare(base, same)
+    assert ok.metadata["prompt_mismatch"] is False and ok.metadata["near_tie"] is True
+    bad = runner._compare(base, longer)
+    assert bad.metadata["prompt_mismatch"] is True and bad.metadata["near_tie"] is None

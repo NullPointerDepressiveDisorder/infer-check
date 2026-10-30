@@ -248,13 +248,12 @@ class OpenAICompatBackend(BackendAdapter):
 
         prompt_text = model_input(prompt)
         user_text = strip_thinking_tokens(prompt_text) if self._disable_thinking else prompt_text
-        messages: list[dict[str, str]] = []
-        if self._disable_thinking:
-            # Empty system message overrides any server-side SYSTEM default
-            # (Ollama Modelfile SYSTEM, hosted-template system prompts, …)
-            # that might re-inject a thinking trigger token.
-            messages.append({"role": "system", "content": ""})
-        messages.append({"role": "user", "content": user_text})
+        # Exactly the messages the in-process backend renders, so both sides see the
+        # same prompt. An empty system message used to be added here: templates that
+        # render a system turn (Qwen, Gemma) then got 5 extra tokens, and templates
+        # with a default system prompt lost it. Thinking is turned off by the
+        # template flags below instead.
+        messages: list[dict[str, str]] = [{"role": "user", "content": user_text}]
         payload: dict[str, object] = {
             "model": self._model_id,
             "messages": messages,

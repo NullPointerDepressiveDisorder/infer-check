@@ -232,10 +232,7 @@ def test_generate_chat_disable_thinking_strips_think_token_from_message() -> Non
     with patch("httpx.AsyncClient.post", return_value=mock_response) as post:
         asyncio.run(backend.generate(prompt))
         sent = post.call_args.kwargs["json"]
-        assert sent["messages"] == [
-            {"role": "system", "content": ""},
-            {"role": "user", "content": "what is 2+2?"},
-        ]
+        assert sent["messages"] == [{"role": "user", "content": "what is 2+2?"}]
 
 
 def test_generate_chat_enable_thinking_preserves_think_token() -> None:
@@ -257,8 +254,13 @@ def test_generate_chat_enable_thinking_preserves_think_token() -> None:
         assert sent["messages"] == [{"role": "user", "content": "<|think|>what is 2+2?"}]
 
 
-def test_generate_chat_disable_thinking_prepends_empty_system() -> None:
-    """Empty system message overrides server-side SYSTEM defaults (e.g. Modelfile)."""
+def test_generate_chat_disable_thinking_sends_no_system_message() -> None:
+    """Only the user message, as the in-process backend renders it.
+
+    An empty system message used to be prepended here. Templates that render a
+    system turn (Qwen, Gemma) then saw 5 more prompt tokens than the in-process
+    side, so every comparison between them compared different prompts.
+    """
     backend = OpenAICompatBackend(
         base_url="http://127.0.0.1:8000",  # not Ollama port → /v1/chat path
         model_id="dummy",
@@ -274,10 +276,7 @@ def test_generate_chat_disable_thinking_prepends_empty_system() -> None:
     with patch("httpx.AsyncClient.post", return_value=mock_response) as post:
         asyncio.run(backend.generate(prompt))
         sent = post.call_args.kwargs["json"]
-        assert sent["messages"] == [
-            {"role": "system", "content": ""},
-            {"role": "user", "content": "hi"},
-        ]
+        assert sent["messages"] == [{"role": "user", "content": "hi"}]
 
 
 def test_generate_chat_enable_thinking_no_system_message() -> None:

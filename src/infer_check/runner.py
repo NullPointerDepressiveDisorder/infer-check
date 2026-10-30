@@ -289,6 +289,9 @@ class TestRunner:
         ``metadata["near_tie"]`` says whether the first divergence is a near-tie
         (each side's token in the other's top-K, as in vLLM's correctness tests),
         or None when that can't be checked. See ``divergence_is_near_tie``.
+        ``metadata["prompt_mismatch"]`` is True when the two sides report prompts
+        of different token lengths: they saw different prompts, and no near-tie
+        verdict is given.
 
         KL: pass teacher-forced ``kl`` stats when both backends could score the
         baseline's tokens. Otherwise an approximate prefix KL is computed from
@@ -315,7 +318,15 @@ class TestRunner:
 
         # Token IDs are only comparable when both sides share a tokenizer.
         token_divergence_index = first_divergence(baseline, test) if token_level else None
-        near_tie = divergence_is_near_tie(baseline, test, token_divergence_index) if token_level else None
+        # Prompts tokenized to different lengths mean the two sides saw different
+        # prompts (template, system message, BOS); a near-tie verdict would be meaningless.
+        b_pt, t_pt = baseline.metadata.get("prompt_tokens"), test.metadata.get("prompt_tokens")
+        prompt_mismatch = isinstance(b_pt, int) and isinstance(t_pt, int) and b_pt != t_pt
+        near_tie = (
+            divergence_is_near_tie(baseline, test, token_divergence_index)
+            if token_level and not prompt_mismatch
+            else None
+        )
         if not token_level:
             kl = None
         elif kl is None:
@@ -341,6 +352,7 @@ class TestRunner:
                 "severity": severity,
                 "whitespace_only": whitespace_only,
                 "near_tie": near_tie,
+                "prompt_mismatch": prompt_mismatch,
                 "prompt_text": baseline.metadata.get("prompt_text"),
                 "prompt_category": baseline.metadata.get("prompt_category"),
                 "category": baseline.metadata.get("prompt_category") or baseline.metadata.get("category"),
