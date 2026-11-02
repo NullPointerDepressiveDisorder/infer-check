@@ -635,10 +635,12 @@ def compare(
             severities[sev] += 1
 
     table.add_row("prompts", str(n))
-    table.add_row(
-        "flip rate",
-        f"[{'red' if compare_result.flip_rate > 0.1 else 'green'}]{compare_result.flip_rate:.1%}[/]",
-    )
+    if compare_result.flip_eligible:
+        color = "red" if compare_result.flip_rate > 0.1 else "green"
+        flip_cell = f"[{color}]{compare_result.flip_rate:.1%}[/] of {compare_result.flip_eligible} with answer keys"
+    else:
+        flip_cell = "n/a (no prompts with answer keys)"
+    table.add_row("flip rate", flip_cell)
     if compare_result.mean_kl_divergence is not None:
         method = "teacher-forced" if compare_result.kl_method == "teacher_forced" else "prefix, approximate"
         table.add_row(f"mean KL divergence ({method})", f"{compare_result.mean_kl_divergence:.6f}")
@@ -673,7 +675,7 @@ def compare(
             cat_table.add_row(
                 cat,
                 str(stats.get("count", 0)),
-                f"{stats.get('flip_rate', 0.0):.1%}",
+                f"{stats.get('flip_rate', 0.0):.1%}" if stats.get("flip_eligible") else "n/a",
                 f"{stats.get('mean_similarity', 0.0):.4f}",
             )
 
@@ -860,7 +862,7 @@ def diff(
 
     from collections import defaultdict
 
-    from infer_check.runner import correctness_summary
+    from infer_check.runner import correctness_summary, flip_eligible
     from infer_check.runner import flip_rate as compute_flip_rate
 
     groups: dict[str, list[Any]] = defaultdict(list)
@@ -871,16 +873,21 @@ def diff(
         failures = sum(1 for c in comps if c.is_failure)
         failure_rate = failures / len(comps) if comps else 0.0
         flip_rate = compute_flip_rate(comps)
+        keyed = flip_eligible(comps)
         mean_sim = sum(c.text_similarity for c in comps) / len(comps) if comps else 0.0
         table.add_row(
             backend_name,
             str(failures),
             f"{failure_rate:.2%}",
-            f"[{'red' if flip_rate > 0.1 else 'green'}]{flip_rate:.1%}[/]",
+            f"[{'red' if flip_rate > 0.1 else 'green'}]{flip_rate:.1%}[/] ({keyed})" if keyed else "n/a",
             f"{mean_sim:.4f}",
         )
 
     console.print(table)
+    if not any(flip_eligible(comps) for comps in groups.values()):
+        console.print("[dim]flip_rate n/a: no prompt in this suite has an answer key (gsm8k does).[/dim]")
+    else:
+        console.print("[dim]flip_rate is over prompts with answer keys (count in brackets).[/dim]")
     for backend_name, comps in groups.items():
         identical = sum(1 for c in comps if c.text_similarity == 1.0)
         whitespace_only = sum(1 for c in comps if c.metadata.get("whitespace_only"))

@@ -460,8 +460,8 @@ _HTML_TEMPLATE = """\
             {{ run.correctness.regressions }} regressions / {{ run.correctness.improvements }} improvements
           </div>
           {% else %}
-          <div class="chip {{ 'chip-fail' if run.flip_rate > 0.1 else 'chip-ok' }}" style="font-size:0.9rem; padding:4px 12px;">
-            Flip Rate: {{ run.flip_rate_pct }}%
+          <div class="chip" style="font-size:0.9rem; padding:4px 12px;">
+            No answer keys: correctness not measured
           </div>
           {% endif %}
         </div>
@@ -511,7 +511,7 @@ _HTML_TEMPLATE = """\
         </div>
         <div class="metric">
           <span class="mlabel">Flip Rate</span>
-          <span class="mval" style="font-size:1.25rem;">{{ run.flip_rate_pct }}%</span>
+          <span class="mval" style="font-size:1.25rem;">{{ run.flip_rate_pct }}</span>
         </div>
         <div class="metric">
           <span class="mlabel">Mean Text Similarity</span>
@@ -538,7 +538,7 @@ _HTML_TEMPLATE = """\
             {% for cat, stats in run.per_category.items() %}
             <tr>
               <td><code>{{ cat }}</code></td>
-              <td>{{ (stats.flip_rate * 100) | round(1) }}%</td>
+              <td>{% if stats.flip_eligible %}{{ (stats.flip_rate * 100) | round(1) }}%{% else %}n/a{% endif %}</td>
               <td>{{ (stats.mean_similarity * 100) | round(1) }}%</td>
             </tr>
             {% endfor %}
@@ -1035,7 +1035,7 @@ def _build_compare_context(compare_results: list[CompareResult]) -> list[dict[st
                 "backend_a": c.backend_a,
                 "backend_b": c.backend_b,
                 "flip_rate": c.flip_rate,
-                "flip_rate_pct": f"{c.flip_rate * 100:.1f}",
+                "flip_rate_pct": f"{c.flip_rate * 100:.1f}%" if c.flip_eligible else "n/a",
                 "mean_similarity_pct": f"{c.mean_text_similarity * 100:.1f}"
                 if c.mean_text_similarity is not None
                 else "N/A",

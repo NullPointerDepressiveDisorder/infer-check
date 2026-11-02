@@ -52,6 +52,11 @@ def flip_rate(comparisons: list[ComparisonResult]) -> float:
     return sum(1 for c in eligible if c.metadata["flipped"]) / len(eligible) if eligible else 0.0
 
 
+def flip_eligible(comparisons: list[ComparisonResult]) -> int:
+    """How many comparisons can flip: prompts with an answer key. 0 means no flip rate."""
+    return sum(1 for c in comparisons if c.metadata.get("flipped") is not None)
+
+
 def tokenizers_conflict(a: BackendAdapter, b: BackendAdapter) -> bool:
     """True only when both tokenizer fingerprints are known and differ.
 
@@ -196,13 +201,12 @@ class TestRunner:
         the other wrong. As in ``paired_correctness``, an unparsed response, or a
         truncation where the other side finished, counts as wrong.
 
-        Free prompts: falls back to category-based answer extraction. Prompts
-        whose category has no real extractor, or where no answer could be
-        extracted from one side, would only be compared by raw text similarity,
-        which says nothing about the answer. They get ``flipped = None`` and are
-        excluded from the flip rate.
+        Prompts without an answer key get ``flipped = None``: without a key there
+        is no telling which side is right, and answers picked out of the text by
+        heuristics (the last number, say) can come from unfinished reasoning, so a
+        "flip" there means little. Their outputs are still compared by identity,
+        divergence and KL.
         """
-        from infer_check.analysis.answer_extract import answers_match, extract_answer
         from infer_check.analysis.scoring import final_answer, grade
 
         text_a, text_b = comp.baseline.text, comp.test.text
@@ -229,18 +233,7 @@ class TestRunner:
             comp.metadata["flipped"] = eff_a in gradable and eff_b in gradable and eff_a != eff_b
             return
 
-        ans_a = extract_answer(text_a, prompt.category)
-        ans_b = extract_answer(text_b, prompt.category)
-        comp.metadata["answer_a"] = ans_a.value
-        comp.metadata["answer_b"] = ans_b.value
-        comp.metadata["extraction_strategy"] = ans_a.strategy
-        comp.metadata["extraction_confidence"] = min(ans_a.confidence, ans_b.confidence)
-        if ans_a.strategy == "raw" or not ans_a.value or not ans_b.value:
-            # No extractor for this category, or no answer found on one side:
-            # there's nothing to compare, so this prompt isn't flip-eligible.
-            comp.metadata["flipped"] = None
-        else:
-            comp.metadata["flipped"] = not answers_match(ans_a, ans_b)
+        comp.metadata["flipped"] = None
 
     def _save_checkpoint(self, results: Any, path: Path) -> None:
         """Write intermediate results as JSON for resumability."""
@@ -676,7 +669,7 @@ class TestRunner:
         # ── Aggregate metrics ────────────────────────────────────────
         n = len(comparisons)
 
-        # Flip rate over flip-eligible prompts; correctness over prompts with answer keys.
+        # Flip rate and correctness: both over prompts with answer keys only.
         overall_flip_rate = flip_rate(comparisons)
         correctness = correctness_summary(comparisons)
 
@@ -696,6 +689,7 @@ class TestRunner:
             per_category[cat] = {
                 "count": cat_n,
                 "flip_rate": flip_rate(cat_comps),
+                "flip_eligible": flip_eligible(cat_comps),
                 "correctness": correctness_summary(cat_comps),
                 "mean_similarity": sum(c.text_similarity for c in cat_comps) / cat_n,
                 "mean_kl_divergence": cat_kl["mean_kl"],
@@ -724,6 +718,7 @@ class TestRunner:
             backend_b=backend_b.name,
             comparisons=comparisons,
             flip_rate=overall_flip_rate,
+            flip_eligible=flip_eligible(comparisons),
             correctness=correctness,
             mean_kl_divergence=kl_summary["mean_kl"],
             kl_method=kl_summary["method"],

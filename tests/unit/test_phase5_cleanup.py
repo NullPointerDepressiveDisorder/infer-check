@@ -45,18 +45,24 @@ def _res(text: str) -> InferenceResult:
 
 
 @pytest.mark.parametrize(
-    ("a", "b", "expected"),
+    ("a", "b"),
     [
-        ("The answer is 42", "The answer is 43", True),
-        ("The answer is 42", "It is 42", False),
-        ("The answer is 42", "I'm not sure.", None),  # no number on one side: nothing to compare
-        ("No idea.", "I'm not sure.", None),
+        ("The answer is 42", "The answer is 43"),
+        ("The answer is 42", "It is 42"),
+        ("So far 479001600, and next", "so the total is 13 and"),  # both cut off mid-reasoning
+        ("No idea.", "I'm not sure."),
     ],
 )
-def test_free_prompt_flip_needs_answers_on_both_sides(a: str, b: str, expected: bool | None) -> None:
+def test_prompts_without_an_answer_key_never_flip(a: str, b: str) -> None:
+    """Without a key there is no telling which side is right.
+
+    Heuristic extraction used to compare the last numbers in the text, which on
+    Qwen3.5 (92 of 100 reasoning outputs cut off at the token limit) meant numbers
+    from unfinished reasoning, and a 26.5% "flip rate" between two servers.
+    """
     comp = ComparisonResult(baseline=_res(a), test=_res(b), text_similarity=0.5, is_failure=False)
     TestRunner(cache_dir=".test_cache")._annotate_flip_metadata(comp, Prompt(text="?", category="arithmetic"))
-    assert comp.metadata["flipped"] is expected
+    assert comp.metadata["flipped"] is None
 
 
 # ── --max-tokens notice ─────────────────────────────────────────────

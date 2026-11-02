@@ -214,7 +214,8 @@ class CompareResult(BaseInferModel):
     backend_a: str
     backend_b: str
     comparisons: list[ComparisonResult]
-    flip_rate: float  # fraction of flip-eligible prompts where the answer changed
+    flip_rate: float  # fraction of flip-eligible prompts (those with an answer key) where the answer changed
+    flip_eligible: int = 0  # prompts with an answer key; 0 means there is no flip rate
     # Paired correctness against answer keys (see analysis.scoring.paired_correctness);
     # None when no prompt in the suite has an answer key.
     correctness: dict[str, Any] | None = None

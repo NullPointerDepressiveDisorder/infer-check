@@ -178,15 +178,14 @@ class StubBackend(BackendAdapter):
 @pytest.mark.asyncio
 async def test_diff_flip_detection(runner: TestRunner) -> None:
     # Setup prompts
-    p1 = Prompt(id="p1", text="What is 2+2?", category="arithmetic")
-    p2 = Prompt(id="p2", text="What is the capital of France?", category="general")
+    p1 = Prompt(id="p1", text="What is 2+2?", category="arithmetic", answer_type="integer", expected="4")
+    p2 = Prompt(id="p2", text="What is 3+3?", category="arithmetic")  # no answer key
     prompts = [p1, p2]
 
-    # Setup backends
-    # p1: baseline says 4, test says 5 (FLIP)
-    # p2: both say Paris (NO FLIP)
-    baseline_backend = StubBackend("baseline", {"p1": "The answer is 4", "p2": "Paris"})
-    test_backend = StubBackend("test", {"p1": "The answer is 5", "p2": "Paris"})
+    # p1 (keyed): baseline right, test wrong -> flip
+    # p2 (no key): the answers differ, but without a key there is no flip verdict
+    baseline_backend = StubBackend("baseline", {"p1": "Final answer: 4", "p2": "The answer is 6"})
+    test_backend = StubBackend("test", {"p1": "Final answer: 5", "p2": "The answer is 7"})
 
     # Run diff
     comparisons = await runner.diff(
@@ -200,17 +199,23 @@ async def test_diff_flip_detection(runner: TestRunner) -> None:
     # Check p1 (flip)
     comp_p1 = next(c for c in comparisons if c.baseline.prompt_id == "p1")
     assert comp_p1.metadata["flipped"] is True
-    assert comp_p1.metadata["answer_a"] == "4"
-    assert comp_p1.metadata["answer_b"] == "5"
-    assert "extraction_confidence" in comp_p1.metadata
+    assert (comp_p1.metadata["grade_a"], comp_p1.metadata["grade_b"]) == ("correct", "wrong")
+    assert (comp_p1.metadata["answer_a"], comp_p1.metadata["answer_b"]) == ("4", "5")
 
-    # Check p2: free-form "general" prompt with no answer extractor. Raw text
-    # similarity says nothing about the answer, so it's not flip-eligible.
     comp_p2 = next(c for c in comparisons if c.baseline.prompt_id == "p2")
     assert comp_p2.metadata["flipped"] is None
-    assert comp_p2.metadata["answer_a"].lower() == "paris"
-    assert comp_p2.metadata["answer_b"].lower() == "paris"
-    assert "extraction_confidence" in comp_p2.metadata
+    assert "answer_a" not in comp_p2.metadata
+
+
+@pytest.mark.asyncio
+async def test_compare_reports_how_many_prompts_could_flip(runner: TestRunner) -> None:
+    keyed = Prompt(id="k", text="2+2?", category="arithmetic", answer_type="integer", expected="4")
+    free = Prompt(id="f", text="Say hi", category="general")
+    a = StubBackend("a", {"k": "Final answer: 4", "f": "hi"})
+    b = StubBackend("b", {"k": "Final answer: 5", "f": "hello"})
+    result = await runner.compare(a, b, [keyed, free])
+    assert result.flip_eligible == 1 and result.flip_rate == 1.0
+    assert result.per_category_stats["general"]["flip_eligible"] == 0
 
 
 @pytest.mark.asyncio

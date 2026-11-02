@@ -37,7 +37,7 @@ Comparisons are reported as a paired table: both right, **regressions** (A right
 !!! tip "You need many prompts"
     With 100 prompts and a handful of regressions, McNemar can't detect anything. Use the `gsm8k` suite (1,319 problems) for quantization comparisons, and pick prompts the baseline mostly gets right. Two different wrong answers say nothing about whether quantization broke the model.
 
-Bundled answer keys: all of `gsm8k`, and 43 of the 100 `adversarial-numerics` prompts (only those with a single unambiguous answer, computed by `scripts/build_answer_keys.py`).
+Bundled answer keys: all of `gsm8k`, and 42 of the 100 `adversarial-numerics` prompts (only those with a single unambiguous answer, computed by `scripts/build_answer_keys.py`).
 
 ## Flip rate
 
@@ -45,23 +45,9 @@ The flip rate is the fraction of **flip-eligible** prompts where the answer chan
 
 For prompts with an answer key, a flip means one side is correct and the other wrong. An `unparsed` response and a one-sided `truncated` response are treated as wrong, so a correct answer becoming unparseable is a flip (and a regression); two-sided truncations are excluded. The correctness table reports separately how many regressions came from unparsed answers, so format failures stay distinguishable from wrong values.
 
-For prompts without a key, infer-check falls back to extracting an answer based on the prompt's category:
+Prompts without an answer key never flip (`flipped` is `null`), and the flip rate shows `n/a` when no prompt in the run has a key. Without a key there is no telling which side is right, and answers picked out of the text by heuristics are unreliable: the last number in an output that hit the token limit comes from unfinished reasoning. Earlier versions did that, and between two servers running the same Qwen3.5-9B weights, where 92 of 100 reasoning-suite outputs were cut off, it reported a 26.5% flip rate made of numbers like `479001600` against `13`.
 
-| Category | Strategy | What it extracts |
-|----------|----------|-----------------|
-| Numeric prompts | `numeric` | Last number in the response (integers, decimals, scientific notation) |
-| Boolean prompts | `boolean` | Yes/no with negation detection |
-| Code prompts | `code` | Fenced code blocks with whitespace normalization |
-| JSON prompts | `json` | Parsed and canonicalized JSON |
-| Everything else | — | Not flip-eligible (`flipped` is `null`) |
-
-Prompts in categories without an extractor used to be compared by raw text similarity, which made any rewording count as a "flip". They are now excluded from the flip rate.
-
-A "flip" occurs when the extracted answers from two models don't match. For example:
-
-- Model A answers "42", Model B answers "43" --> **flipped** (numeric)
-- Model A answers "Yes", Model B answers "No" --> **flipped** (boolean)
-- Model A and B give the same code but different commentary --> **not flipped** (code blocks match)
+Suites without answer keys (`reasoning`, `code`, `determinism`, `long-context`, `quant-sensitive`) are still the right tool for everything that compares two backends with each other rather than with a right answer: identical outputs, where and why they diverge (see near-ties under `diff`), KL divergence, top-1 agreement, determinism and stress. Use `gsm8k` or the keyed `adversarial-numerics` prompts for claims about answers.
 
 ### Flip rate vs severity
 
