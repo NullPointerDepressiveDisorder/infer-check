@@ -253,13 +253,24 @@ def test_truncating_where_the_other_side_finished_counts_as_wrong() -> None:
     assert t["a"]["scored"] == 4 and t["a"]["correct"] == 1
 
 
-def test_prompts_where_both_sides_truncate_are_excluded() -> None:
+def test_both_truncated_is_not_correct_and_left_out_of_the_paired_test() -> None:
     t = paired_correctness([("truncated", "truncated"), ("correct", "correct")])
     assert t is not None
     assert t["both_truncated"] == 1 and t["n_graded"] == 2
-    assert t["a"]["scored"] == 1 and t["b"]["scored"] == 1
+    # accuracy is over every graded prompt: the baseline's can't change from row to row
+    assert t["a"]["scored"] == 2 and t["a"]["accuracy"] == 0.5 and t["b"]["accuracy"] == 0.5
     assert t["a"]["truncated"] == 0 and t["b"]["truncated"] == 0
     assert t["n_paired"] == 1 and t["both_right"] == 1
+
+
+def test_baseline_accuracy_is_the_same_whatever_it_is_compared_with() -> None:
+    """Llama-3.1-8B pilot: the baseline read 93.8%, 91.8% and 90.0% in three rows."""
+    base = ["correct"] * 45 + ["wrong"] * 3 + ["truncated"] * 2
+    vs_self = paired_correctness(list(zip(base, base, strict=True)))
+    vs_other = paired_correctness(list(zip(base, ["correct"] * 48 + ["wrong"] * 2, strict=True)))
+    assert vs_self is not None and vs_other is not None
+    assert vs_self["a"]["accuracy"] == vs_other["a"]["accuracy"] == 45 / 50
+    assert (vs_self["n_paired"], vs_other["n_paired"]) == (48, 50)
 
 
 # ── fractions that can't be evaluated are unparsed ──────────────────

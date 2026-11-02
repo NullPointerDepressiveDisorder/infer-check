@@ -290,6 +290,12 @@ def paired_correctness(pairs: Iterable[tuple[Grade, Grade]]) -> dict[str, Any] |
     problem with the prompt. Only when *both* sides truncate is the prompt
     excluded, since then the budget itself is the likely cause.
 
+    Accuracy is over *all* graded prompts, with anything but a correct answer
+    (wrong, unparsed, truncated) counted as not correct, as lm-eval does. So each
+    side has one accuracy whatever it is compared with, and the baseline's doesn't
+    change from row to row. The 2x2 table and McNemar test use the paired prompts
+    (``n_paired``: all but those where both sides truncated).
+
     Unparseable answers (the model stopped without a ``Final answer:``) count as
     wrong, in accuracy *and* in the 2x2 table and McNemar test. Accuracy and its
     significance test must use the same outcomes: otherwise a model that stops
@@ -314,9 +320,10 @@ def paired_correctness(pairs: Iterable[tuple[Grade, Grade]]) -> dict[str, Any] |
     eff = [(effective(a, b), effective(b, a)) for a, b in kept]
 
     def side(idx: int) -> dict[str, Any]:
-        grades = [p[idx] for p in eff]
-        correct = grades.count("correct")
-        scored = len(grades)
+        # A truncated output is never correct, so excluding both-truncated pairs
+        # only changes the denominator: accuracy is over every graded prompt.
+        correct = [p[idx] for p in eff].count("correct")
+        scored = len(raw)
         ci = wilson_interval(correct, scored)
         return {
             "correct": correct,

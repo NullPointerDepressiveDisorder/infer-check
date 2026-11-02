@@ -67,7 +67,7 @@ def test_all_truncated_table_renders_and_fails_clearly(pc: ModuleType, capsys: p
 
     table = paired_correctness([("truncated", "truncated")] * 3)
     row = pc.fmt_row("2bit", {"mean_kl": 1.0, "mean_top1_agreement": 0.5}, table)  # used to raise TypeError
-    assert "N/A -> N/A" in row
+    assert "0.0% -> 0.0%" in row  # no answers on any prompt: 0% accuracy, nothing to pair
     assert pc.check_detects_damage("2bit", table) is False
     assert "no gradable pairs" in capsys.readouterr().out
 

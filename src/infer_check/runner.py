@@ -414,6 +414,7 @@ class TestRunner:
         quantization_levels: list[str],
         model_id: str,
         baseline_quant: str | None = None,
+        self_check_prompts: int | None = None,
     ) -> SweepResult:
         """Run prompts through a separate backend per quantization level.
 
@@ -424,6 +425,10 @@ class TestRunner:
             quantization_levels: Ordered list of quant labels (keys into backend_map).
             model_id: Identifier for the model family (used in results metadata).
             baseline_quant: Which label is the baseline. Defaults to first in list.
+            self_check_prompts: Re-run the baseline on only the first N prompts to
+                check it is deterministic (None: all of them, 0: skip). The check
+                only needs to catch nondeterminism, so a subset does that without
+                generating the whole baseline twice.
         """
         self.errors = ErrorLog()
         baseline_results: dict[str, InferenceResult] = {}
@@ -435,8 +440,8 @@ class TestRunner:
                 raise ValueError("Must provide at least one quantization level")
             baseline_quant = quantization_levels[0]
 
-        # +1 for the baseline self-check (run baseline twice)
-        total_steps = (len(quantization_levels) + 1) * len(prompts)
+        self_check = prompts if self_check_prompts is None else prompts[: max(self_check_prompts, 0)]
+        total_steps = len(quantization_levels) * len(prompts) + len(self_check)
 
         with Progress() as progress:
             task = progress.add_task("[cyan]Running sweep...", total=total_steps)
@@ -466,7 +471,7 @@ class TestRunner:
 
             # ---- Baseline pass 2: self-check for determinism ----
             progress.update(task, description=f"[cyan]Baseline self-check ({baseline_quant})...")
-            for prompt in prompts:
+            for prompt in self_check:
                 if prompt.id not in baseline_results:
                     progress.advance(task)
                     continue

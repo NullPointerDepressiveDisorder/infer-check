@@ -214,6 +214,16 @@ def main(ctx: click.Context, max_tokens: int, num_prompts: int | None, keep_dist
     help="Baseline label (defaults to first in --models).",
 )
 @click.option("--base-url", default=None, help="Base URL for HTTP backends.")
+@click.option(
+    "--self-check-prompts",
+    default=50,
+    show_default=True,
+    type=click.IntRange(min=0),
+    help=(
+        "Re-run the baseline on the first N prompts to check it is deterministic (KL must be "
+        "exactly 0). 0 skips the check; a number at least the suite size checks every prompt."
+    ),
+)
 @common_options
 @click.pass_context
 def sweep(
@@ -224,6 +234,7 @@ def sweep(
     output: Path,
     baseline: str | None,
     base_url: str | None,
+    self_check_prompts: int,
     max_tokens: int | None,
     num_prompts: int | None,
     disable_thinking: bool,
@@ -296,6 +307,7 @@ def sweep(
             quantization_levels=quant_levels,
             model_id=model_map[baseline_label],
             baseline_quant=baseline_label,
+            self_check_prompts=self_check_prompts,
         )
     )
 
@@ -379,7 +391,15 @@ def sweep(
         "TF = teacher-forced (both models score the baseline's tokens), "
         "prefix = approximate, shared-context positions only.[/dim]"
     )
-    _print_correctness_by_group(result.summary.get("correctness_by_quant", {}), "quant_level")
+    # The baseline's row is its self-check, which may cover only the first N prompts;
+    # label it so its accuracy isn't read as the baseline's.
+    _print_correctness_by_group(
+        {
+            (f"{name} (self-check)" if name == baseline_label else name): table
+            for name, table in result.summary.get("correctness_by_quant", {}).items()
+        },
+        "quant_level",
+    )
     cliff = result.summary.get("degradation_cliff")
     if isinstance(cliff, dict):
         console.print(
@@ -400,7 +420,7 @@ def _correctness_cells(table: dict[str, Any] | None) -> tuple[str, str]:
         return "—", "—"
     p = table["mcnemar_p"]
     style = "red" if table["regressions"] > table["improvements"] and p < 0.05 else ""
-    flips = f"{table['regressions']} / {table['improvements']} (p={p:.3g})"
+    flips = f"{table['regressions']} / {table['improvements']} (p={p:.3g}, n={table['n_paired']})"
     return f"{_fmt_acc(table['a'])} → {_fmt_acc(table['b'])}", f"[{style}]{flips}[/]" if style else flips
 
 
@@ -442,9 +462,10 @@ def _print_correctness(table: dict[str, Any] | None, label_a: str, label_b: str)
     console.print(t)
     console.print(f"  accuracy {label_a}: {acc(a)}")
     console.print(f"  accuracy {label_b}: {acc(b)}")
+    paired = f" on {table['n_paired']} paired prompts" if table["n_paired"] != table["n_graded"] else ""
     console.print(
         f"  regressions {table['regressions']}, improvements {table['improvements']}, "
-        f"exact McNemar p = {table['mcnemar_p']:.3g}"
+        f"exact McNemar p = {table['mcnemar_p']:.3g}{paired}"
     )
     if table.get("regressions_from_unparsed") or table.get("improvements_from_unparsed"):
         console.print(
@@ -455,7 +476,7 @@ def _print_correctness(table: dict[str, Any] | None, label_a: str, label_b: str)
         console.print(
             f"  [dim]no parseable answer: {a['unparsed']} / {b['unparsed']}; "
             f"hit token limit while the other finished (counted wrong): {a['truncated']} / {b['truncated']}; "
-            f"both hit the limit (excluded): {table['both_truncated']}[/dim]"
+            f"both hit the limit (not correct, and left out of the paired test): {table['both_truncated']}[/dim]"
         )
 
 

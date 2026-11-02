@@ -983,7 +983,10 @@ def _correctness_view(table: dict[str, Any] | None, label_a: str, label_b: str) 
             f"{a.get('truncated', 0)} ({label_a}) / {b.get('truncated', 0)} ({label_b})."
         )
     if table.get("both_truncated"):
-        notes.append(f"Both hit the token limit, excluded: {table['both_truncated']}.")
+        notes.append(
+            f"Both hit the token limit: {table['both_truncated']}, counted not correct in accuracy "
+            "and left out of the paired test."
+        )
     return {
         "label_a": label_a,
         "label_b": label_b,
